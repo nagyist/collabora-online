@@ -31,6 +31,7 @@ void lokit_main(
                 const std::string& sysTemplate,
                 const std::string& loTemplate,
                 const std::string& loSubPath,
+                const std::string& tmpFontDir,
                 bool noCapabilities,
                 bool noSeccomp,
                 bool queryVersionInfo,
@@ -143,5 +144,7 @@ std::string anonymizeUsername(const std::string& username);
 /// For the Android app, for now, we need access to the one and only document open to perform eg. saveAs() for printing.
 std::shared_ptr<lok::Document> getLOKDocumentForAndroidOnly();
 #endif
+
+extern _LibreOfficeKit* loKitPtr;
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

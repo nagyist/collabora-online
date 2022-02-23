@@ -120,6 +120,8 @@ class Document;
 static Document *singletonDocument = nullptr;
 #endif
 
+_LibreOfficeKit* loKitPtr = nullptr;
+
 /// Used for test code to accelerating waiting until idle and to
 /// flush sockets with a 'processtoidle' -> 'idle' reply.
 static std::chrono::steady_clock::time_point ProcessToIdleDeadline;
@@ -2443,8 +2445,6 @@ void copyCertificateDatabaseToTmp(Poco::Path const& jailPath)
 #endif
 }
 
-
-
 void lokit_main(
 #if !MOBILEAPP
                 const std::string& childRoot,
@@ -2452,6 +2452,7 @@ void lokit_main(
                 const std::string& sysTemplate,
                 const std::string& loTemplate,
                 const std::string& loSubPath,
+                const std::string& tmpFontDir,
                 bool noCapabilities,
                 bool noSeccomp,
                 bool queryVersion,
@@ -2574,6 +2575,17 @@ void lokit_main(
                 if (!JailUtil::bind(tmpSubDir, jailTmpDir))
                 {
                     LOG_ERR("Failed to mount [" << tmpSubDir << "] -> [" << jailTmpDir
+                                                << "], will link/copy contents.");
+                    return false;
+                }
+
+                // Mount the directory for fonts downloaded from servers, if configured
+                const std::string jailTmpFontDir = Poco::Path(jailPath, tmpFontDir.substr(1)).toString();
+                LOG_INF("Mounting temp font dir " << tmpFontDir << " -> " << jailTmpFontDir);
+                if (!JailUtil::bind(tmpFontDir, jailTmpFontDir)
+                    || !JailUtil::remountReadonly(tmpFontDir, jailTmpFontDir))
+                {
+                    LOG_ERR("Failed to mount [" << tmpFontDir << "] -> [" << jailTmpFontDir
                                                 << "], will link/copy contents.");
                     return false;
                 }
@@ -2964,13 +2976,12 @@ bool globalPreinit(const std::string &loTemplate)
         }
     }
 
-    LokHookPreInit* preInit = reinterpret_cast<LokHookPreInit *>(dlsym(handle, "lok_preinit"));
+    LokHookPreInit2* preInit = reinterpret_cast<LokHookPreInit2 *>(dlsym(handle, "lok_preinit_2"));
     if (!preInit)
     {
-        LOG_FTL("No lok_preinit symbol in " << loadedLibrary << ": " << dlerror());
+        LOG_FTL("No lok_preinit_2 symbol in " << loadedLibrary << ": " << dlerror());
         return false;
     }
-
     initFunction = reinterpret_cast<LokHookFunction2 *>(dlsym(handle, "libreofficekit_hook_2"));
     if (!initFunction)
     {
@@ -2989,13 +3000,15 @@ bool globalPreinit(const std::string &loTemplate)
              "javaloader javavm jdbc rpt rptui rptxml ",
              0 /* no overwrite */);
 
-    LOG_TRC("Invoking lok_preinit(" << loTemplate << "/program\", \"file:///tmp/user\")");
+    LOG_TRC("Invoking lok_preinit_2(" << loTemplate << "/program\", \"file:///tmp/user\")");
     const auto start = std::chrono::steady_clock::now();
-    if (preInit((loTemplate + "/program").c_str(), "file:///tmp/user") != 0)
+    if (preInit((loTemplate + "/program").c_str(), "file:///tmp/user", &loKitPtr) != 0)
     {
         LOG_FTL("lok_preinit() in " << loadedLibrary << " failed");
         return false;
     }
+
+    LOG_DBG("After lok_preinit_2: loKitPtr=" << loKitPtr);
 
     LOG_TRC("Finished lok_preinit(" << loTemplate << "/program\", \"file:///tmp/user\") in "
                                     << std::chrono::duration_cast<std::chrono::milliseconds>(

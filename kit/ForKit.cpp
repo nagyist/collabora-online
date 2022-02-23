@@ -63,6 +63,7 @@ static bool DisplayVersion = false;
 static std::string UnitTestLibrary;
 static std::string LogLevel;
 static std::atomic<unsigned> ForkCounter(0);
+static std::string tmpFontDir;
 
 /// The [child pid -> jail path] map.
 static std::map<pid_t, std::string> childJails;
@@ -169,6 +170,14 @@ protected:
             {
                 LOG_ERR("Unknown setconfig command: " << message);
             }
+        }
+        else if (tokens.size() == 2 && tokens.equals(0, "addfont"))
+        {
+            // Tell core to use that font file
+            std::string fontFile = tokens[1];
+
+            assert(loKitPtr);
+            loKitPtr->pClass->setOption(loKitPtr, "addfont", Poco::URI(Poco::Path(fontFile)).toString().c_str());
         }
         else if (tokens.equals(0, "exit"))
         {
@@ -397,7 +406,7 @@ static int createLibreOfficeKit(const std::string& childRoot,
             }
         }
 
-        lokit_main(childRoot, jailId, sysTemplate, loTemplate, loSubPath, NoCapsForKit, NoSeccomp,
+        lokit_main(childRoot, jailId, sysTemplate, loTemplate, loSubPath, tmpFontDir, NoCapsForKit, NoSeccomp,
                    queryVersion, DisplayVersion, spareKitId);
     }
     else
@@ -588,6 +597,11 @@ int main(int argc, char** argv)
         {
             eq = std::strchr(cmd, '=');
             childRoot = std::string(eq+1);
+        }
+        else if (std::strstr(cmd, "--tmpfontdir=") == cmd)
+        {
+            eq = std::strchr(cmd, '=');
+            tmpFontDir = std::string(eq+1);
         }
         else if (std::strstr(cmd, "--clientport=") == cmd)
         {
