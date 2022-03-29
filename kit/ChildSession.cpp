@@ -792,7 +792,7 @@ bool ChildSession::loadDocument(const StringVector& tokens)
 bool ChildSession::sendFontRendering(const StringVector& tokens)
 {
     std::string font, text, decodedFont, decodedChar;
-    bool bSuccess;
+    bool bSuccess = false;
 
     if (tokens.size() < 3 ||
         !getTokenString(tokens[1], "font", font))
@@ -839,7 +839,7 @@ bool ChildSession::sendFontRendering(const StringVector& tokens)
         return sendTextFrame(output.data(), output.size());
     }
 
-    const auto mode = static_cast<LibreOfficeKitTileMode>(getLOKitDocument()->getTileMode());
+    /*const auto mode = static_cast<LibreOfficeKitTileMode>(getLOKitDocument()->getTileMode());
 
     if (Png::encodeBufferToPNG(ptrFont, width, height, output, mode))
     {
@@ -848,7 +848,7 @@ bool ChildSession::sendFontRendering(const StringVector& tokens)
     else
     {
         bSuccess = sendTextFrameAndLogError("error: cmd=renderfont kind=failure");
-    }
+    }*/
 
     std::free(ptrFont);
     return bSuccess;
@@ -1633,7 +1633,7 @@ bool ChildSession::renderSearchResult(const char* buffer, int length, const Stri
 
     getLOKitDocument()->setView(_viewId);
 
-    const auto eTileMode = static_cast<LibreOfficeKitTileMode>(getLOKitDocument()->getTileMode());
+    /*const auto eTileMode = static_cast<LibreOfficeKitTileMode>(getLOKitDocument()->getTileMode());
 
     unsigned char* pBitmapBuffer = nullptr;
 
@@ -1669,7 +1669,7 @@ bool ChildSession::renderSearchResult(const char* buffer, int length, const Stri
 
     if (pBitmapBuffer)
         free(pBitmapBuffer);
-
+    */
     return true;
 }
 
@@ -1898,14 +1898,14 @@ bool ChildSession::renderWindow(const StringVector& tokens)
     output.resize(response.size());
     std::memcpy(output.data(), response.data(), response.size());
 
-    const auto mode = static_cast<LibreOfficeKitTileMode>(getLOKitDocument()->getTileMode());
+    /*const auto mode = static_cast<LibreOfficeKitTileMode>(getLOKitDocument()->getTileMode());
 
     // TODO: use png cache for dialogs too
     if (!Png::encodeSubBufferToPNG(pixmap.data(), 0, 0, width, height, bufferWidth, bufferHeight, output, mode))
     {
         LOG_ERR("Failed to encode into PNG.");
         return false;
-    }
+        }*/
 
 #if 0
     {
