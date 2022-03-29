@@ -283,7 +283,6 @@ shared_headers = common/Common.hpp \
                  common/MessageQueue.hpp \
                  common/Message.hpp \
                  common/MobileApp.hpp \
-                 common/Png.hpp \
                  common/TraceEvent.hpp \
                  common/Rectangle.hpp \
                  common/RenderTiles.hpp \
