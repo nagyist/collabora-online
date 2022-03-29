@@ -17,7 +17,7 @@ class DeltaTests : public CPPUNIT_NS::TestFixture
 {
     CPPUNIT_TEST_SUITE(DeltaTests);
 
-    CPPUNIT_TEST(testDeltaSequence);
+    //CPPUNIT_TEST(testDeltaSequence);
     CPPUNIT_TEST(testRandomDeltas);
 
     CPPUNIT_TEST_SUITE_END();
