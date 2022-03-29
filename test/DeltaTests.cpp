@@ -26,30 +26,30 @@ class DeltaTests : public CPPUNIT_NS::TestFixture
     void testRandomDeltas();
 
     std::vector<char> loadPng(const char *relpath,
-                              png_uint_32& height,
-                              png_uint_32& width,
-                              png_uint_32& rowBytes)
+                              uint32_t& /*height*/,
+                              uint32_t& /*width*/,
+                              uint32_t& /*rowBytes*/)
     {
         std::ifstream file(relpath);
         std::stringstream buffer;
         buffer << file.rdbuf();
         file.close();
-        std::vector<png_bytep> rows =
-            Png::decodePNG(buffer, height, width, rowBytes);
+        /*std::vector<char> rows =
+          Png::decodePNG(buffer, height, width, rowBytes);*/
         std::vector<char> output;
-        for (png_uint_32 y = 0; y < height; ++y)
+        /*for (uint32_t y = 0; y < height; ++y)
         {
-            for (png_uint_32 i = 0; i < width * 4; ++i)
+            for (uint32_t i = 0; i < width * 4; ++i)
             {
                 output.push_back(rows[y][i]);
             }
-        }
+        }*/
         return output;
     }
 
     std::vector<char> applyDelta(
         const std::vector<char> &pixmap,
-        png_uint_32 width, png_uint_32 height,
+        uint32_t width, uint32_t height,
         const std::vector<char> &delta,
         const std::string& testname);
 
@@ -62,7 +62,7 @@ class DeltaTests : public CPPUNIT_NS::TestFixture
 // Quick hack for debugging
 std::vector<char> DeltaTests::applyDelta(
     const std::vector<char> &pixmap,
-    png_uint_32 width, png_uint_32 height,
+    uint32_t width, uint32_t height,
     const std::vector<char> &zDelta,
     const std::string& testname)
 {
@@ -172,7 +172,7 @@ void DeltaTests::testDeltaSequence()
 
     DeltaGenerator gen;
 
-    png_uint_32 height, width, rowBytes;
+    uint32_t height, width, rowBytes;
     const TileWireId textWid = 1;
     std::vector<char> text =
         DeltaTests::loadPng(TDOC "/delta-text.png",
