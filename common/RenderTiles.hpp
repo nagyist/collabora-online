@@ -554,7 +554,6 @@ namespace RenderTiles
 
                         PngCache::CacheData data(new std::vector< char >() );
                         data->reserve(pixmapWidth * pixmapHeight * 1);
-#if ENABLE_DELTAS
                         // FIXME: don't try to store & create deltas for read-only documents.
 
                         // Can we create a delta ?
@@ -566,18 +565,6 @@ namespace RenderTiles
                                                  tileRect.getLeft(), tileRect.getTop(),
                                                  tileCombined.getPart(),
                                                  *data, wireId, oldWireId, pngMutex);
-#else
-                        LOG_TRC("Encode a new png for tile #" << tileIndex);
-                        if (!Png::encodeSubBufferToPNG(pixmap.data(), offsetX, offsetY, pixelWidth, pixelHeight,
-                                                       pixmapWidth, pixmapHeight, *data, mode))
-                        {
-                            // FIXME: Return error.
-                            // sendTextFrameAndLogError("error: cmd=tile kind=failure");
-                            LOG_ERR("Failed to encode tile into PNG.");
-                            return;
-                        }
-#endif
-
                         LOG_TRC("Tile " << tileIndex << " is " << data->size() << " bytes.");
                         std::unique_lock<std::mutex> pngLock(pngMutex);
                         output.insert(output.end(), data->begin(), data->end());
