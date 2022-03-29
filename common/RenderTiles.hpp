@@ -17,7 +17,6 @@
 #include <vector>
 #include <common/SpookyV2.h>
 
-#include "Png.hpp"
 #include "Delta.hpp"
 #include "Rectangle.hpp"
 #include "TileDesc.hpp"

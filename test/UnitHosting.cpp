@@ -23,7 +23,6 @@
 #include <Poco/URI.h>
 #include <test/lokassert.hpp>
 
-#include <Png.hpp>
 #include <Unit.hpp>
 #include <helpers.hpp>
 

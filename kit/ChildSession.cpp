@@ -43,7 +43,6 @@
 #include <common/SpookyV2.h>
 #include "KitHelper.hpp"
 #include <Log.hpp>
-#include <Png.hpp>
 #include <Util.hpp>
 #include <Unit.hpp>
 #include <Clipboard.hpp>

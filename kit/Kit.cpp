@@ -65,7 +65,6 @@
 #include "Kit.hpp"
 #include <Protocol.hpp>
 #include <Log.hpp>
-#include <Png.hpp>
 #include <Rectangle.hpp>
 #include <TileDesc.hpp>
 #include <Unit.hpp>
