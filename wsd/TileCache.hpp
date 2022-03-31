@@ -147,6 +147,19 @@ struct TileData
             }
         }
     }
+
+    void dumpState(std::ostream& os)
+    {
+        if (_wids.size() < 2)
+            os << "keyframe";
+        else {
+            os << "deltas: ";
+            for (size_t i = 0; i < _wids.size(); ++i)
+            {
+                os << i << ": " << _wids[i] << " -> " << _deltas[i]->size() << " ";
+            }
+        }
+    }
 };
 using Tile = std::shared_ptr<TileData>;
 

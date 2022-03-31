@@ -681,7 +681,9 @@ void TileCache::dumpState(std::ostream& os)
     {
         os << "    " << std::setw(4) << it.first.getWireId()
            << '\t' << std::setw(6) << it.second->size() << " bytes"
-           << "\t'" << it.first.serialize() << "'\n" ;
+           << "\t'" << it.first.serialize() << " ";
+        it.second->dumpState(os);
+        os << "\n";
     }
 
     int type = 0;
