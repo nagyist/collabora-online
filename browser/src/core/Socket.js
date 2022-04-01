@@ -1153,7 +1153,8 @@ app.definitions.Socket = L.Class.extend({
 				this._map.openUnlockPopup(blockedInfo.errorCmd);
 			return;
 		}
-		else if (!textMsg.startsWith('tile:') && !textMsg.startsWith('renderfont:') && !textMsg.startsWith('windowpaint:')) {
+		else if (!textMsg.startsWith('tile:') && !textMsg.startsWith('delta:') &&
+			 !textMsg.startsWith('renderfont:') && !textMsg.startsWith('windowpaint:')) {
 
 			if (imgBytes !== undefined) {
 				try {
