@@ -6512,9 +6512,11 @@ L.CanvasTileLayer = L.Layer.extend({
 		}
 
 		// apply potentially several deltas in turn.
+		var i = 0;
 		var offset = 0;
 		while (offset < delta.length)
 		{
+			console.log('Apply chunk ' + i++);
 			offset += this._applyDeltaChunk(canvas, tile, initCanvas, delta.subarray(offset), isKeyframe);
 			initCanvas = false;
 			isKeyframe = false;
@@ -6536,7 +6538,7 @@ L.CanvasTileLayer = L.Layer.extend({
 			// FIXME: subarray delta to only the 1st image pixels we want to add.
 			ctx.putImageData(new ImageData(new Uint8ClampedArray(delta),
 						       canvas.width, canvas.height), 0, 0);
-			return;
+			return canvas.width * canvas.height * 4;
 		}
 
 		if (initCanvas && tile.el) // render old image data to the canvas
@@ -6606,7 +6608,7 @@ L.CanvasTileLayer = L.Layer.extend({
 
 		ctx.putImageData(imgData, 0, 0);
 
-		console.log('set new image from delta');
+		return delta.length;
 	},
 
 	_onTileMsgFileBasedView: function (textMsg, img) {

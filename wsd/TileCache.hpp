@@ -97,7 +97,7 @@ struct TileData
 
     static bool isKeyframe(const char *data, size_t dataSize)
     {
-        return dataSize > 0 && data[0] == 'D';
+        return dataSize > 0 && data[0] == 'Z';
     }
 
     bool isValid() const { return _valid; }
