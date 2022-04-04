@@ -3,7 +3,7 @@
  * L.Control.JSDialog
  */
 
-/* global Hammer */
+/* global Hammer app */
 L.Control.JSDialog = L.Control.extend({
 	options: {
 		snackbarTimeout: 6000
@@ -40,22 +40,43 @@ L.Control.JSDialog = L.Control.extend({
 
 	close: function(id, sendCloseEvent) {
 		if (id && this.dialogs[id]) {
-			if (this.dialogs[id].isPopup)
+			if (this.dialogs[id].isAutofilter)
+				this.closeAutofilter(id, sendCloseEvent);
+			else if (this.dialogs[id].isPopup)
 				this.closePopover(id, sendCloseEvent);
 			else
 				this.closeDialog(id, sendCloseEvent);
 		}
 	},
 
+	closeAutofilter: function(id, sendCloseEvent) {
+		if (!id || !this.dialogs[id]) {
+			console.warn('missing autofilter data');
+			return;
+		}
+
+		L.DomUtil.remove(this.dialogs[id].overlay);
+		var builder = this.clearDialog(id);
+		if (sendCloseEvent !== false)
+			builder.callback('pushbutton', 'click', {id: 'cancel'}, null, builder);
+	},
+
 	closeDialog: function(id, sendCloseEvent) {
+		if (!id || !this.dialogs[id]) {
+			console.warn('missing dialog data');
+			return;
+		}
+
 		var builder = this.clearDialog(id);
 		if (sendCloseEvent !== false)
 			builder.callback('dialog', 'close', {id: '__DIALOG__'}, null, builder);
 	},
 
 	closePopover: function(id, sendCloseEvent) {
-		if (!id || !this.dialogs[id])
+		if (!id || !this.dialogs[id]) {
+			console.warn('missing popover data');
 			return;
+		}
 
 		L.DomUtil.remove(this.dialogs[id].overlay);
 		var clickToClose = this.dialogs[id].clickToClose;
@@ -136,8 +157,58 @@ L.Control.JSDialog = L.Control.extend({
 			toRemove = this.dialogs[data.id].container;
 		}
 
+		var isDocumentAreaPopup = data.popupParent === '_POPOVER_'
+			&& data.posx !== undefined && data.posy !== undefined;
+		var isCalc = this._map._docLayer._docType === 'spreadsheet';
+		var isAutofilter = isDocumentAreaPopup && isCalc;
+
+		var containerParent = isDocumentAreaPopup ?
+			document.getElementById('document-container') : document.body;
+
+		if (isAutofilter)
+		{
+			// this is autofilter popup
+
+			// RTL mode: only difference is when file is RTL not UI
+			// var isViewRTL = document.documentElement.dir === 'rtl';
+			var isSpreadsheetRTL = this._map._docLayer.isCalcRTL();
+
+			var scale = this._map.zoomToFactor(this._map.getZoom());
+			var origin = this._map.getPixelOrigin();
+			var panePos = this._map._getMapPanePos();
+
+			var offsetX = isSpreadsheetRTL ? 0 : app.sectionContainer.getSectionWithName(L.CSections.RowHeader.name).size[0];
+			var offsetY = app.sectionContainer.getSectionWithName(L.CSections.ColumnHeader.name).size[1];
+
+			var left = parseInt(data.posx) * scale;
+			var top = parseInt(data.posy) * scale;
+
+			if (left < 0)
+				left = -1 * left;
+
+			var splitPanesContext = this._map.getSplitPanesContext();
+			var splitPos = new L.Point(0, 0);
+
+			if (splitPanesContext)
+				splitPos = splitPanesContext.getSplitPos();
+
+			var newLeft = left + panePos.x - origin.x;
+			if (left >= splitPos.x && newLeft >= 0)
+				left = newLeft;
+
+			var newTop = top + panePos.y - origin.y;
+			if (top >= splitPos.y && newTop >= 0)
+				top = newTop;
+
+			if (isSpreadsheetRTL)
+				left = this._map._size.x - left;
+
+			posX = left + offsetX;
+			posY = top + offsetY;
+		}
+
 		// it has to be form to handle default button
-		container = L.DomUtil.create('form', 'jsdialog-container ui-dialog ui-widget-content lokdialog_container', document.body);
+		container = L.DomUtil.create('form', 'jsdialog-container ui-dialog ui-widget-content lokdialog_container', containerParent);
 		container.id = data.id;
 		container.style.visibility = 'hidden';
 		if (data.collapsed && (data.collapsed === 'true' || data.collapsed === true))
@@ -178,13 +249,20 @@ L.Control.JSDialog = L.Control.extend({
 			tabs: tabs
 		};
 
-		var builder = new L.control.jsDialogBuilder({windowId: data.id, mobileWizard: this, map: this.map, cssClass: 'jsdialog', callback: callback});
+		var builder = new L.control.jsDialogBuilder(
+			{
+				windowId: data.id,
+				mobileWizard: this,
+				map: this.map,
+				cssClass: 'jsdialog' + (isAutofilter ? ' autofilter' : ''),
+				callback: callback
+			});
 
 		if (isModalPopup && !isSnackbar) {
-			var overlay = L.DomUtil.create('div', builder.options.cssClass + ' jsdialog-overlay ' + (data.cancellable ? 'cancellable' : ''), document.body);
+			var overlay = L.DomUtil.create('div', builder.options.cssClass + ' jsdialog-overlay ' + (data.cancellable ? 'cancellable' : ''), containerParent);
 			overlay.id = data.id + '-overlay';
 			if (data.cancellable)
-				overlay.onclick = function () { that.closePopover(data.id, true); };
+				overlay.onclick = function () { that.close(data.id, true); };
 		}
 
 		builder.build(content, [data]);
@@ -241,8 +319,16 @@ L.Control.JSDialog = L.Control.extend({
 
 				if (!parent && data.popupParent === '_POPOVER_') {
 					// popup was trigerred not by toolbar or menu button, probably on tile area
-					// example: validity listbox
-					parent = document.querySelector('.spreadsheet-drop-down-marker');
+					if (isAutofilter) {
+						// we are already done
+					} else if (isDocumentAreaPopup) {
+						console.warn('other popup than autofilter in the document area');
+						posX = data.posx;
+						posY = data.posy;
+					} else {
+						// validity listbox
+						parent = document.querySelector('.spreadsheet-drop-down-marker');
+					}
 				}
 
 				if (parent) {
@@ -253,6 +339,22 @@ L.Control.JSDialog = L.Control.extend({
 						posX -= posX + content.clientWidth + 10 - window.innerWidth;
 					if (posY + content.clientHeight > window.innerHeight)
 						posY -= posY + content.clientHeight + 10 - window.innerHeight;
+				} else if (isDocumentAreaPopup) {
+					var height = container.getBoundingClientRect().height;
+					if (posY + height > containerParent.getBoundingClientRect().height) {
+						var newTopPosition = posY - height;
+						if (newTopPosition < 0)
+							newTopPosition = 0;
+						posY = newTopPosition;
+					}
+
+					var width = container.getBoundingClientRect().width;
+					if (posX + width > containerParent.getBoundingClientRect().width) {
+						var newLeftPosition = posX - width;
+						if (newLeftPosition < 0)
+							newLeftPosition = 0;
+						posX = newLeftPosition;
+					}
 				}
 			} else if (isSnackbar) {
 				posX = window.innerWidth/2 - container.offsetWidth/2;
@@ -291,6 +393,7 @@ L.Control.JSDialog = L.Control.extend({
 			clickToClose: clickToCloseId ? L.DomUtil.get(clickToCloseId) : null,
 			overlay: overlay,
 			isPopup: isModalPopup,
+			isAutofilter: isAutofilter,
 			invalidated: false,
 			setupPosFunc: initialPositionSetup
 		};
