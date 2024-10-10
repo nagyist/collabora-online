@@ -72,10 +72,6 @@ body {
 	top: -100em;
 }
 
-#wopi-host-id, #proxy-prefix-id {
-	display: none !important;
-}
-
 .about-dialog-info-div {
 	margin-inline-end: auto;
 }
@@ -540,6 +536,10 @@ nav.spreadsheet-color-indicator ~ #sidebar-dock-wrapper {
 	width: 250px;
 }
 
+.cool-annotation.annotation-pop-up {
+	width: 75%;
+}
+
 .cool-annotation.tracked-deleted-comment-show {
 	opacity: 0.5;
 }
@@ -768,6 +768,12 @@ nav.spreadsheet-color-indicator ~ #sidebar-dock-wrapper {
 	padding: 0;
 	vertical-align: top;
 }
+
+.cool-annotation-child-line {
+	border-style: none none dashed dashed;
+	border-width: thin;
+	border-color: black;
+}
 /*Tooltips
 ----------------------------------*/
 [data-title]:hover:after {
@@ -987,6 +993,7 @@ nav.spreadsheet-color-indicator ~ #sidebar-dock-wrapper {
 	line-height: 1;
 	background-color: var(--color-background-lighter);
 	width: 301px;
+	overflow: visible !important;
 }
 
 .hyperlink-pop-up-container a {
@@ -1180,6 +1187,19 @@ nav.spreadsheet-color-indicator ~ #sidebar-dock-wrapper {
 	position: relative;
 	top: calc(-10px - var(--border-radius));
 	border-radius: var(--border-radius);
+}
+
+.hyperlink-pop-up-container .arrow-div {
+	width: 20px;
+	height: 20px;
+	transform: rotate(45deg);
+	display: inline-block;
+	position: relative;
+	top: 27px;
+	left: calc(-50% + 10px);
+	background-color: inherit;
+	border-right: 1px solid var(--color-border-darker);
+	border-bottom: 1px solid var(--color-border-darker);
 }
 
 #hyperlink-pop-up-preview:not(.no-preview) {

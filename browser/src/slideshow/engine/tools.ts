@@ -17,6 +17,8 @@ type AGConstructor<T> = abstract new (...args: any[]) => T;
 type Handler0 = () => void;
 type Handler1 = (x: any) => void;
 
+type RGBAArray = [number, number, number, number];
+
 function assert(object: any, message: string) {
 	if (!object) {
 		window.app.console.trace();
@@ -57,6 +59,21 @@ function makeScaler(nScale: number) {
 	return function (nValue: number) {
 		return nScale * nValue;
 	};
+}
+
+function getRectCenter(rect: DOMRect) {
+	const cx = rect.x + rect.width / 2;
+	const cy = rect.y + rect.height / 2;
+	return { x: cx, y: cy };
+}
+
+function convert(convFactor: { x: number; y: number }, rect: DOMRect): DOMRect {
+	const x1 = Math.floor(rect.x * convFactor.x);
+	const y1 = Math.floor(rect.y * convFactor.y);
+	const x2 = Math.ceil((rect.x + rect.width) * convFactor.x);
+	const y2 = Math.ceil((rect.y + rect.height) * convFactor.y);
+
+	return new DOMRect(x1, y1, x2 - x1 + 1, y2 - y1 + 1);
 }
 
 class PriorityQueue {

@@ -144,7 +144,7 @@ void HTTPServerTest::testCoolGet()
     Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, pathAndQuery);
     Poco::Net::HTMLForm param(request);
 
-    const std::string html = httpResponse->getBody();
+    const std::string& html = httpResponse->getBody();
     LOK_ASSERT(html.find(param["access_token"]) != std::string::npos);
     LOK_ASSERT(html.find(_uri.getHost()) != std::string::npos);
     LOK_ASSERT(html.find(Util::getCoolVersionHash()) != std::string::npos);
@@ -257,7 +257,7 @@ void HTTPServerTest::testCoolPost()
     LOK_ASSERT_EQUAL(http::StatusCode::OK, httpResponse->statusLine().statusCode());
     LOK_ASSERT_EQUAL(std::string("text/html"), httpResponse->header().getContentType());
 
-    const std::string html = httpResponse->getBody();
+    const std::string& html = httpResponse->getBody();
     fprintf(stderr, "%s\n", html.c_str());
     LOK_ASSERT(html.find(_uri.getHost()) != std::string::npos);
     LOK_ASSERT(html.find("data-version-path = \"" + Util::getCoolVersionHash() + '"') !=
@@ -618,6 +618,7 @@ void HTTPServerTest::testExtractDocStructure()
     Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, "/cool/extract-document-structure");
     Poco::Net::HTMLForm form;
     form.setEncoding(Poco::Net::HTMLForm::ENCODING_MULTIPART);
+    form.set("filter", "contentcontrol");
     form.addPart("data", new Poco::Net::FilePartSource(srcPath));
     form.prepareSubmit(request);
     try
@@ -698,6 +699,7 @@ void HTTPServerTest::testTransformDocStructure()
         Poco::Net::HTMLForm form;
         form.setEncoding(Poco::Net::HTMLForm::ENCODING_MULTIPART);
         form.set("format", "docx");
+        form.set("filter", "contentcontrol");
         form.addPart("data", new Poco::Net::FilePartSource(srcPath2));
         form.prepareSubmit(request);
         try

@@ -8,11 +8,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
+
 /*
  * Toolbar handler
  */
 
-/* global app $ window brandProductName _ */
+/* global app $ window brandProductName DocUtil _ */
+
 L.Map.include({
 
 	// a mapping of uno commands to more readable toolbar items
@@ -379,7 +381,7 @@ L.Map.include({
 			'.uno:ExportToEPUB', '.uno:ExportToPDF', '.uno:ExportDirectToPDF', '.uno:MoveKeepInsertMode', '.uno:ShowRuler'];
 		if (app.isCommentEditingAllowed()) {
 			allowedCommands.push('.uno:InsertAnnotation','.uno:DeleteCommentThread', '.uno:DeleteAnnotation', '.uno:DeleteNote',
-				'.uno:DeleteComment', '.uno:ReplyComment', '.uno:ReplyToAnnotation', '.uno:ResolveComment',
+				'.uno:DeleteComment', '.uno:ReplyComment', '.uno:ReplyToAnnotation', '.uno:PromoteComment', '.uno:ResolveComment',
 				'.uno:ResolveCommentThread', '.uno:ResolveComment', '.uno:EditAnnotation', '.uno:ExportToEPUB', '.uno:ExportToPDF',
 				'.uno:ExportDirectToPDF');
 		}
@@ -748,6 +750,7 @@ L.Map.include({
 	},
 
 	extractContent: function(html) {
+		html = DocUtil.stripHTML(html);
 		var parser = new DOMParser;
 		return parser.parseFromString(html, 'text/html').documentElement.getElementsByTagName('body')[0].textContent;
 	},
@@ -772,6 +775,11 @@ L.Map.include({
 		var map = this;
 		var id = 'hyperlink';
 		var title = _('Insert hyperlink');
+
+		let focusId = 'hyperlink-link-box-input';
+		if (defaultText === '') {
+			focusId = 'hyperlink-text-box';
+		}
 
 		var dialogId = 'modal-dialog-' + id;
 		var json = map.uiManager._modalDialogJSON(id, title, true, [
@@ -818,7 +826,7 @@ L.Map.include({
 				vertical: false,
 				layoutstyle: 'end'
 			},
-		], 'hyperlink-link-box-input');
+		], focusId);
 
 		map.uiManager.showModal(json, [
 			{id: 'response-ok', func: function() {
@@ -854,7 +862,7 @@ L.Map.include({
 			text = this.hyperlinkUnderCursor.text;
 		} else if (this._clip && this._clip._selectionType == 'text') {
 			if (map['stateChangeHandler'].getItemValue('.uno:Copy') === 'enabled') {
-				if (L.Browser.hasNavigatorClipboardWrite) {
+				if (L.Browser.clipboardApiAvailable) {
 					// Async copy, trigger fetching the text selection.
 					app.socket.sendMessage('gettextselection mimetype=text/html,text/plain;charset=utf-8');
 				} else {

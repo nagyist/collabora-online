@@ -62,6 +62,15 @@ L.DebugManager = L.Class.extend({
 		// if the user is not active
 		this._automatedUserQueue = [];
 		this._automatedUserTasks = {};
+
+		// Display debug info in About box
+		const wopiHostId = document.getElementById('wopi-host-id-cloned');
+		if (wopiHostId)
+			wopiHostId.style.display = 'block';
+
+		const servedBy = document.getElementById('served-by-cloned');
+		if (servedBy)
+			servedBy.style.display = 'flex';
 	},
 
 	_stop: function() {
@@ -77,6 +86,15 @@ L.DebugManager = L.Class.extend({
 			this._controls[category].remove();
 		}
 		this._controls = {};
+
+		// Hide debug info in About box
+		const wopiHostId = document.getElementById('wopi-host-id-cloned');
+		if (wopiHostId)
+			wopiHostId.style.display = 'none';
+
+		const servedBy = document.getElementById('served-by-cloned');
+		if (servedBy)
+			servedBy.style.display = 'none';
 	},
 
 	_addDebugTool: function (tool) {

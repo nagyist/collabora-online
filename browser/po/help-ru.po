@@ -2,9 +2,9 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2024-09-16 14:25+0200\n"
-"PO-Revision-Date: 2024-07-24 22:44+0000\n"
-"Last-Translator: Влад <integration.into.society@gmail.com>\n"
+"POT-Creation-Date: 2024-10-09 07:43+0200\n"
+"PO-Revision-Date: 2024-09-28 06:17+0000\n"
+"Last-Translator: Artur Yakupov <arturyak@gmail.com>\n"
 "Language-Team: Russian <https://hosted.weblate.org/projects/collabora-online/"
 "help/ru/>\n"
 "Language: ru\n"
@@ -49,7 +49,7 @@ msgstr "<kbd>Ctrl</kbd><span class=\"kbd--plus\">+</span><kbd>X</kbd>"
 
 #: html/cool-help.html%2Bdiv.div.table.tr.td:13-38
 msgid "Copy"
-msgstr ""
+msgstr "Копировать"
 
 #: html/cool-help.html%2Bdiv.div.table.tr.td:13-69
 #, fuzzy
@@ -2469,7 +2469,7 @@ msgstr ""
 
 #: html/cool-help.html%2Bdiv.div.div.div.h4:580-5
 msgid "Handling Tables"
-msgstr ""
+msgstr "Работа с Таблицами"
 
 #: html/cool-help.html%2Bdiv.div.div.div.p:581-5
 msgid ""

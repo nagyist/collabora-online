@@ -294,7 +294,7 @@ L.Control.JSDialogBuilder = L.Control.extend({
 				 !window._firstDialogHandled &&
 				 (eventType === 'close' ||
 				 (objectType === 'responsebutton' && data == 7))) {
-				window.onClose();
+				app.dispatcher.dispatch('closeapp');
 			}
 			switch (typeof data) {
 			case 'string':
@@ -1513,8 +1513,10 @@ L.Control.JSDialogBuilder = L.Control.extend({
 		if (data.password === true)
 			edit.type = 'password';
 
-		if (data.enabled === 'false' || data.enabled === false)
-			$(edit).prop('disabled', true);
+		if (data.enabled === 'false' || data.enabled === false) {
+			container.setAttribute('disabled', 'true');
+			edit.disabled = true;
+		}
 
 		JSDialog.SynchronizeDisabledState(container, [edit]);
 
@@ -2473,8 +2475,14 @@ L.Control.JSDialogBuilder = L.Control.extend({
 
 		$(controls.button).on('click', clickFunction);
 		$(controls.label).on('click', clickFunction);
-		$(div).on('mouseenter', mouseEnterFunction);
-		$(div).on('mouseleave', mouseLeaveFunction);
+		// We need a way to also handle the cutom tooltip for any tool button like save in shortcut bar
+		if (data.isCustomTooltip) {
+			this._handleCutomTooltip(div, builder);
+		}
+		else {
+			$(div).on('mouseenter', mouseEnterFunction);
+			$(div).on('mouseleave', mouseLeaveFunction);
+		}
 
 		div.addEventListener('keydown', function(e) {
 			switch (e.key) {
@@ -2493,6 +2501,21 @@ L.Control.JSDialogBuilder = L.Control.extend({
 		builder.map.disableLockedItem(data, controls['container'], controls['container']);
 
 		return controls;
+	},
+
+	_handleCutomTooltip: function(elem, builder) {
+		switch (elem.id) {
+			case 'save':
+				$(elem).on('mouseenter', function() {
+					if (builder.map.tooltip)
+						builder.map.tooltip.show(elem, builder.map.getLastModDateValue()); // Show the tooltip with the correct content
+				});
+	
+				$(elem).on('mouseleave', function() {
+					if (builder.map.tooltip)
+						builder.map.tooltip.hide(elem);
+				});
+		}
 	},
 
 	_mapDispatchToolItem: function (parentContainer, data, builder) {
@@ -3097,6 +3120,11 @@ L.Control.JSDialogBuilder = L.Control.extend({
 		control.style.visibility = 'hidden';
 
 		var temporaryParent = L.DomUtil.create('div');
+
+		// Remove the id of the to-be-removed control, so _makeIdUnique() won't rename
+		// data.id to something we can't find later.
+		control.id = '';
+
 		buildFunc.bind(this)(temporaryParent, [data], false);
 		parent.insertBefore(temporaryParent.firstChild, control.nextSibling);
 		var backupGridSpan = control.style.gridColumn;

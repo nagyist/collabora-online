@@ -92,7 +92,8 @@ L.Control.Menubar = L.Control.extend({
 					{name: _('Word 2003 Document (.doc)'), id: 'downloadas-doc', type: 'action'},
 					{name: _('Word Document (.docx)'), id: 'downloadas-docx', type: 'action'},
 					{name: _('Rich Text (.rtf)'), id: 'downloadas-rtf', type: 'action'},
-					{name: _('EPUB (.epub)'), id: !window.ThisIsAMobileApp ? 'exportepub' : 'downloadas-epub', type: 'action'}]},
+					{name: _('EPUB (.epub)'), id: !window.ThisIsAMobileApp ? 'exportepub' : 'downloadas-epub', type: 'action'},
+					{name: _('HTML file (.html)'), id: 'downloadas-html', type: 'action'}]},
 				{name: _UNO('.uno:SetDocumentProperties', 'text'), uno: '.uno:SetDocumentProperties', id: 'properties'},
 				{type: 'separator'},
 				{name: L.Control.MenubarShortcuts.addShortcut(_UNO('.uno:Print', 'text'), L.Control.MenubarShortcuts.shortcuts.PRINT), id: 'print', type: 'action'},
@@ -916,6 +917,9 @@ L.Control.Menubar = L.Control.extend({
 				{name: _UNO('.uno:NamesMenu', 'spreadsheet'), type: 'menu', menu: [
 					{name: _UNO('.uno:AddName', 'spreadsheet'), uno: '.uno:AddName'},
 					{name: _UNO('.uno:DefineName', 'spreadsheet'), uno: '.uno:DefineName'}]},
+				{name: _UNO('.uno:DefineDBName', 'spreadsheet'), uno: '.uno:DefineDBName'},
+				{name: _UNO('.uno:SelectDB', 'spreadsheet'), uno: '.uno:SelectDB'},
+				{name: _UNO('.uno:DataAreaRefresh', 'spreadsheet'), uno: '.uno:DataAreaRefresh'},
 				{type: 'separator'},
 				{name: _UNO('.uno:GroupOutlineMenu', 'spreadsheet'), type: 'menu', menu: [
 					{uno: '.uno:Group'},
@@ -1865,11 +1869,10 @@ L.Control.Menubar = L.Control.extend({
 					}
 					if (id === 'insertcomment' && (self._map.getDocType() !== 'drawing' && !app.isCommentEditingAllowed()))
 						found = false;
+					if (id === 'serveraudit' && (app.isAdminUser === false || !self._map.serverAuditDialog))
+						found = false;
 					if (!found) {
-						$(aItem).addClass('disabled');
-						aItem.title = _('Read-only mode');
-					} else {
-						$(aItem).removeClass('disabled');
+						$(aItem).hide();
 					}
 				}
 			}
@@ -2010,7 +2013,7 @@ L.Control.Menubar = L.Control.extend({
 		} else if (L.Params.revHistoryEnabled && (id === 'rev-history' || id === 'Rev-History' || id === 'last-mod')) {
 			app.dispatcher.dispatch('rev-history');
 		} else if (id === 'closedocument') {
-			window.onClose();
+			app.dispatcher.dispatch('closeapp');
 		} else if (id === 'repair') {
 			app.dispatcher.dispatch('repair');
 		} else if (id === 'searchdialog') {

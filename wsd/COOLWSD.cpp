@@ -351,7 +351,7 @@ void COOLWSD::appendAllowedAliasGroups(LayeredConfiguration& conf, std::vector<s
 /// connected to any document.
 void COOLWSD::alertAllUsersInternal(const std::string& msg)
 {
-    if (Util::isMobileApp())
+    if constexpr (Util::isMobileApp())
         return;
     std::lock_guard<std::mutex> docBrokersLock(DocBrokersMutex);
 
@@ -370,7 +370,7 @@ void COOLWSD::alertAllUsersInternal(const std::string& msg)
 
 void COOLWSD::alertUserInternal(const std::string& dockey, const std::string& msg)
 {
-    if (Util::isMobileApp())
+    if constexpr (Util::isMobileApp())
         return;
     std::lock_guard<std::mutex> docBrokersLock(DocBrokersMutex);
 
@@ -1179,7 +1179,7 @@ public:
                     {
                         _eTagValue = httpResponse->get("ETag");
 
-                        std::string body = httpResponse->getBody();
+                        const std::string& body = httpResponse->getBody();
 
                         LOG_DBG("Got " << body.size() << " bytes for " << remoteServerURI.toString());
 
@@ -1882,9 +1882,7 @@ private:
             return false;
         }
 
-        const std::string body = httpResponse->getBody();
-
-        std::string fontFile;
+        const std::string& body = httpResponse->getBody();
 
         // We intentionally use a new file name also when an updated version of a font is
         // downloaded. It causes trouble to rewrite the same file, in case it is in use in some Kit
@@ -1894,17 +1892,19 @@ private:
 
         // And in reality, it is a bit unclear how likely it even is that fonts downloaded through
         // this mechanism even will be updated.
-        fontFile = COOLWSD::TmpFontDir + "/" + Util::encodeId(Util::rng::getNext()) + ".ttf";
+        const std::string fontFile =
+            COOLWSD::TmpFontDir + '/' + Util::encodeId(Util::rng::getNext()) + ".ttf";
 
         std::ofstream fontStream(fontFile);
         fontStream.write(body.data(), body.size());
         if (!fontStream.good())
         {
-                LOG_ERR("Could not write to " << fontFile);
-                return false;
+            LOG_ERR("Could not write " << body.size() << " bytes to [" << fontFile << ']');
+            return false;
         }
 
-        LOG_DBG("Got " << body.size() << " bytes for " << uri << " and wrote to " << fontFile);
+        LOG_DBG("Got " << body.size() << " bytes from [" << uri << "] and wrote to [" << fontFile
+                       << ']');
         fonts[uri].pathName = fontFile;
 
         COOLWSD::sendMessageToForKit("addfont " + fontFile);
@@ -2071,7 +2071,7 @@ void COOLWSD::innerInitialize(Application& self)
         { "logging.file.property[7]", "false" },
         { "logging.file.property[7][@name]", "archive" },
         { "logging.file[@enable]", "false" },
-        { "logging.level", "trace" },
+        { "logging.level", COOLWSD_LOGLEVEL },
         { "logging.level_startup", "trace" },
         { "logging.lokit_sal_log", "-INFO-WARN" },
         { "logging.docstats", "false" },
@@ -2079,7 +2079,6 @@ void COOLWSD::innerInitialize(Application& self)
         { "logging.disable_server_audit", "false" },
         { "browser_logging", "false" },
         { "mount_jail_tree", "true" },
-        { "mount_namespaces", "true" },
         { "net.connection_timeout_secs", "30" },
         { "net.listen", "any" },
         { "net.proto", "all" },
@@ -2087,7 +2086,7 @@ void COOLWSD::innerInitialize(Application& self)
         { "net.proxy_prefix", "false" },
         { "net.content_security_policy", "" },
         { "net.frame_ancestors", "" },
-        { "num_prespawn_children", "1" },
+        { "num_prespawn_children", NUM_PRESPAWN_CHILDREN },
         { "per_document.always_save_on_exit", "false" },
         { "per_document.autosave_duration_secs", "300" },
         { "per_document.cleanup.cleanup_interval_ms", "10000" },
@@ -2096,7 +2095,7 @@ void COOLWSD::innerInitialize(Application& self)
         { "per_document.cleanup.limit_dirty_mem_mb", "3072" },
         { "per_document.cleanup.limit_cpu_per", "85" },
         { "per_document.cleanup.lost_kit_grace_period_secs", "120" },
-        { "per_document.cleanup[@enable]", "false" },
+        { "per_document.cleanup[@enable]", "true" },
         { "per_document.idle_timeout_secs", "3600" },
         { "per_document.idlesave_duration_secs", "30" },
         { "per_document.limit_file_size_mb", "0" },
@@ -2113,7 +2112,7 @@ void COOLWSD::innerInitialize(Application& self)
         { "per_document.pdf_resolution_dpi", "96" },
         { "per_document.redlining_as_comments", "false" },
         { "per_view.idle_timeout_secs", "900" },
-        { "per_view.out_of_focus_timeout_secs", "120" },
+        { "per_view.out_of_focus_timeout_secs", "300" },
         { "per_view.custom_os_info", "" },
         { "security.capabilities", "true" },
         { "security.seccomp", "true" },
@@ -2132,7 +2131,7 @@ void COOLWSD::innerInitialize(Application& self)
         { "ssl.sts.enabled", "false" },
         { "ssl.sts.max_age", "31536000" },
         { "ssl.key_file_path", COOLWSD_CONFIGDIR "/key.pem" },
-        { "ssl.termination", "true" },
+        { "ssl.termination", "false" },
 #if !MOBILEAPP
         { "ssl.ssl_verification", SSL_VERIFY },
 #endif
@@ -2196,6 +2195,7 @@ void COOLWSD::innerInitialize(Application& self)
         { "deepl.enabled", "false" },
         { "zotero.enable", "true" },
         { "indirection_endpoint.geolocation_setup.enable", "false" },
+        { "indirection_endpoint.geolocation_setup.timezone", "" },
         { "indirection_endpoint.server_name", "" },
         { "indirection_endpoint.url", "" },
 #if !MOBILEAPP
@@ -2208,6 +2208,7 @@ void COOLWSD::innerInitialize(Application& self)
         { "admin_console.logging.admin_action", "true" },
         { "wasm.enable", "false" },
         { "wasm.force", "false" },
+        { "document_signing.enable", "true" },
     };
 
     // Set default values, in case they are missing from the config file.
@@ -2514,7 +2515,7 @@ void COOLWSD::innerInitialize(Application& self)
 
 #if ENABLE_SSL
     COOLWSD::SSLEnabled.set(getConfigValue<bool>(conf, "ssl.enable", true));
-    COOLWSD::SSLTermination.set(getConfigValue<bool>(conf, "ssl.termination", true));
+    COOLWSD::SSLTermination.set(getConfigValue<bool>(conf, "ssl.termination", false));
 #endif
 
     LOG_INF("SSL support: SSL is " << (COOLWSD::isSSLEnabled() ? "enabled." : "disabled."));
@@ -2633,7 +2634,7 @@ void COOLWSD::innerInitialize(Application& self)
 #endif // CODE_COVERAGE
 
     // Setup the jails.
-    bool UseMountNamespaces = getConfigValue<bool>(conf, "mount_namespaces", true);
+    bool UseMountNamespaces = true;
 
     NoCapsForKit =
         Util::isKitInProcess() || !getConfigValue<bool>(conf, "security.capabilities", true);
@@ -2994,7 +2995,7 @@ void COOLWSD::innerInitialize(Application& self)
     docProcSettings.setLimitNumberOpenFiles(getConfigValue<int>("per_document.limit_num_open_files", 0));
 
     DocCleanupSettings &docCleanupSettings = docProcSettings.getCleanupSettings();
-    docCleanupSettings.setEnable(getConfigValue<bool>("per_document.cleanup[@enable]", false));
+    docCleanupSettings.setEnable(getConfigValue<bool>("per_document.cleanup[@enable]", true));
     docCleanupSettings.setCleanupInterval(getConfigValue<int>("per_document.cleanup.cleanup_interval_ms", 10000));
     docCleanupSettings.setBadBehaviorPeriod(getConfigValue<int>("per_document.cleanup.bad_behavior_period_secs", 60));
     docCleanupSettings.setIdleTime(getConfigValue<int>("per_document.cleanup.idle_time_secs", 300));
@@ -3101,7 +3102,7 @@ void COOLWSD::dumpOutgoingTrace(const std::string& id, const std::string& sessio
 
 void COOLWSD::defineOptions(OptionSet& optionSet)
 {
-    if (Util::isMobileApp())
+    if constexpr (Util::isMobileApp())
         return;
     ServerApplication::defineOptions(optionSet);
 
@@ -3859,7 +3860,7 @@ private:
 
             auto child = std::make_shared<ChildProcess>(pid, jailId, socket, request);
 
-            if (!Util::isMobileApp())
+            if constexpr (!Util::isMobileApp())
                 UnitWSD::get().newChild(child);
 
             _pid = pid;
@@ -3945,7 +3946,7 @@ class PlainSocketFactory final : public SocketFactory
         }
 #endif
         return StreamSocket::create<StreamSocket>(
-            std::string(), fd, type, false,
+            std::string(), fd, type, false, HostType::Other,
             std::make_shared<ClientRequestDispatcher>());
     }
 };
@@ -3968,7 +3969,7 @@ class SslSocketFactory final : public SocketFactory
         }
 #endif
 
-        return StreamSocket::create<SslStreamSocket>(std::string(), fd, type, false,
+        return StreamSocket::create<SslStreamSocket>(std::string(), fd, type, false, HostType::Other,
                                                      std::make_shared<ClientRequestDispatcher>());
     }
 };
@@ -3979,7 +3980,7 @@ class PrisonerSocketFactory final : public SocketFactory
     std::shared_ptr<Socket> create(const int fd, Socket::Type type) override
     {
         // No local delay.
-        return StreamSocket::create<StreamSocket>(std::string(), fd, type, false,
+        return StreamSocket::create<StreamSocket>(std::string(), fd, type, false, HostType::Other,
                                                   std::make_shared<PrisonerRequestDispatcher>(),
                                                   StreamSocket::ReadType::UseRecvmsgExpectFD);
     }
@@ -4102,6 +4103,12 @@ public:
            << "\n  OverrideWatermark: " << COOLWSD::OverrideWatermark
            << "\n  UserInterface: " << COOLWSD::UserInterface
             ;
+
+        std::string smap;
+        if (const ssize_t size = FileUtil::readFile("/proc/self/smaps_rollup", smap); size <= 0)
+            os << "\n  smaps_rollup: <unavailable>";
+        else
+            os << "\n  smaps_rollup: " << smap;
 
 #if !MOBILEAPP
         if (FetchHttpSession)
@@ -4953,6 +4960,10 @@ void dump_state()
     const std::string msg = oss.str();
     fprintf(stderr, "%s\n", msg.c_str());
     LOG_TRC(msg);
+
+#if !MOBILEAPP
+    Admin::dumpMetrics();
+#endif
 }
 
 void lslr_childroot()

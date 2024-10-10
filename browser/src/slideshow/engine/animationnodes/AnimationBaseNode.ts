@@ -50,7 +50,7 @@ abstract class AnimationBaseNode extends BaseNode {
 
 		// subItem property for text animated element
 		this.bIsTargetTextElement =
-			aNodeInfo.subItem && aNodeInfo.subItem === 'text';
+			aNodeInfo.subItem && aNodeInfo.subItem === 'OnlyText';
 
 		// additive property
 		if (aNodeInfo.additive && aNodeInfo.additive in AdditiveMode) {
@@ -246,8 +246,7 @@ abstract class AnimationBaseNode2 extends AnimationBaseNode {
 		if (!this.attributeName) {
 			this.eCurrentState = NodeState.Invalid;
 			window.app.console.log(
-				'AnimationBaseNode2.parseElement: target attribute name not found: ' +
-					this.attributeName,
+				`${this.sClassName}.parseElement: target attribute name not found`,
 			);
 		} else {
 			this.attributeName = this.attributeName.toLowerCase();
@@ -268,7 +267,8 @@ abstract class AnimationBaseNode2 extends AnimationBaseNode {
 
 		if (verbose) {
 			if (this.getAttributeName())
-				sInfo += ';  attributeName: ' + this.getAttributeName();
+				sInfo +=
+					';  \x1B[31mattributeName: ' + this.getAttributeName() + '\x1B[m';
 
 			if (this.getToValue()) sInfo += ';  to: ' + this.getToValue();
 		}

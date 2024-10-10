@@ -379,8 +379,11 @@ class StatusBar extends JSDialog.Toolbar {
 
 		var canUserWrite = window.ThisIsAMobileApp ? !app.isReadOnly() : this.map['wopi'].UserCanWrite;
 		var EditDocMode = true;
-		if (app.map['stateChangeHandler'].getItemValue('EditDoc') !== undefined)
+		if (app.map['stateChangeHandler'].getItemValue('EditDoc') !== undefined) {
 			EditDocMode = app.map['stateChangeHandler'].getItemValue('EditDoc') === "true";
+			if (!EditDocMode)
+				app.map.uiManager.showSnackbar(_('To prevent accidental changes, the author has set this file to open as view-only'));
+		}
 
 		canUserWrite = canUserWrite && EditDocMode;
 
@@ -481,6 +484,11 @@ class StatusBar extends JSDialog.Toolbar {
 			this.onPermissionChanged({detail : {
 				perm: state && this.map.isEditMode() ? "edit" : "readonly"
 			} });
+		}
+		else if (commandName === '.uno:Signature') {
+			// Use the same handler as the 'signaturestatus:' protocol message, which is
+			// sent right after document load.
+			this.map.onChangeSignStatus(state);
 		}
 	}
 

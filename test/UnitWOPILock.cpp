@@ -65,7 +65,7 @@ public:
     {
         const std::string lockToken = request.get("X-WOPI-Lock", std::string());
         const std::string newLockState = request.get("X-WOPI-Override", std::string());
-        LOG_TST("In " << toString(_phase) << ", X-WOPI-Lock: " << lockToken << ", X-WOPI-Override: "
+        LOG_TST("In " << name(_phase) << ", X-WOPI-Lock: " << lockToken << ", X-WOPI-Override: "
                       << newLockState << ", for URI: " << request.getURI());
 
         if (_phase == Phase::Lock)
@@ -191,7 +191,7 @@ public:
     {
         const std::string lockToken = request.get("X-WOPI-Lock", std::string());
         const std::string newLockState = request.get("X-WOPI-Override", std::string());
-        LOG_TST("In " << toString(_phase) << ", X-WOPI-Lock: " << lockToken << ", X-WOPI-Override: "
+        LOG_TST("In " << name(_phase) << ", X-WOPI-Lock: " << lockToken << ", X-WOPI-Override: "
                       << newLockState << ", for URI: " << request.getURI());
 
         LOG_ASSERT_MSG(_checkFileInfoCount == 2, "Must have had two CheckFileInfo requests");
@@ -250,7 +250,8 @@ public:
     void onDocBrokerViewLoaded(const std::string&,
                                const std::shared_ptr<ClientSession>& session) override
     {
-        LOG_TST("View #" << _viewCount + 1 << " [" << session->getName() << "] loaded");
+        LOG_TST("View #" << _viewCount + 1 << " [" << session->getName()
+                         << "] loaded, phase: " << name(_phase));
 
         ++_viewCount;
         if (_viewCount == 1)
@@ -276,7 +277,7 @@ public:
     /// The document is modified. Disconnect editor.
     bool onDocumentModified(const std::string& message) override
     {
-        LOG_TST("onDocumentModified: [" << message << ']');
+        LOG_TST("onDocumentModified: [" << message << "], phase: " << name(_phase));
 
         // We get this twice, skip the second one.
         if (_phase != Phase::Upload)
@@ -293,7 +294,7 @@ public:
     void onDocBrokerRemoveSession(const std::string&,
                                   const std::shared_ptr<ClientSession>& session) override
     {
-        LOG_TST("Removing session [" << session->getName() << ']');
+        LOG_TST("Removing session [" << session->getName() << "], phase: " << name(_phase));
         if (_phase == Phase::Unlock)
         {
             // LOK_ASSERT_STATE(_phase, Phase::WaitUnload);
@@ -302,7 +303,7 @@ public:
 
     void onDocBrokerDestroy(const std::string& docKey) override
     {
-        LOG_TST("Destroyed dockey [" << docKey << ']');
+        LOG_TST("Destroyed dockey [" << docKey << "], phase: " << name(_phase));
         LOK_ASSERT_STATE(_phase, Phase::WaitUnload);
 
         TRANSITION_STATE(_phase, Phase::Done);
@@ -388,7 +389,7 @@ public:
     {
         const std::string lockToken = request.get("X-WOPI-Lock", std::string());
         const std::string newLockState = request.get("X-WOPI-Override", std::string());
-        LOG_TST("In " << toString(_phase) << ", X-WOPI-Lock: " << lockToken << ", X-WOPI-Override: "
+        LOG_TST("In " << name(_phase) << ", X-WOPI-Lock: " << lockToken << ", X-WOPI-Override: "
                       << newLockState << ", for URI: " << request.getURI());
 
         if (_phase == Phase::Lock)
@@ -513,7 +514,7 @@ public:
     {
         const std::string lock = request.get("X-WOPI-Lock", std::string());
         const std::string newLockState = request.get("X-WOPI-Override", std::string());
-        LOG_TST("In " << toString(_phase) << ", X-WOPI-Lock: " << lock << ", X-WOPI-Override: "
+        LOG_TST("In " << name(_phase) << ", X-WOPI-Lock: " << lock << ", X-WOPI-Override: "
                       << newLockState << ", for URI: " << request.getURI());
 
         if (_phase == Phase::Lock)
@@ -632,6 +633,7 @@ UnitBase** unit_create_wsd_multi(void)
         new UnitWopiLock(), new UnitWopiLockReadOnly(), new UnitWopiLockFail(),
             new UnitWopiUnlock(), nullptr
     };
+
 }
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

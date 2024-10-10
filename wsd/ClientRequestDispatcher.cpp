@@ -1405,8 +1405,16 @@ std::string ClientRequestDispatcher::getContentType(const std::string& fileName)
         { "dif", "application/x-dif-document" },
         { "slk", "text/spreadsheet" },
         { "csv", "text/csv" },
+        { "tsv", "text/tab-separated-values" },
         { "dbf", "application/x-dbase" },
         { "wk1", "application/vnd.lotus-1-2-3" },
+        { "wks", "application/vnd.lotus-1-2-3" },
+        { "wq2", "application/vnd.lotus-1-2-3" },
+        { "123", "application/vnd.lotus-1-2-3" },
+        { "wb1", "application/vnd.lotus-1-2-3" },
+        { "wq1", "application/vnd.lotus-1-2-3" },
+        { "xlr", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+        { "qpw", "application/vnd.ms-office" },
         { "cgm", "image/cgm" },
         { "dxf", "image/vnd.dxf" },
         { "emf", "image/x-emf" },
@@ -2080,6 +2088,9 @@ static std::string getCapabilitiesJson(bool convertToAvailable)
     capabilities->set("hasWASMSupport",
                       COOLWSD::WASMState != COOLWSD::WASMActivationState::Disabled);
 
+    // Set if this instance supports document signing.
+    capabilities->set("hasDocumentSigningSupport", config::getBool("document_signing.enable", true));
+
     const std::string serverName = config::getString("indirection_endpoint.server_name", "");
     if (const char* podName = std::getenv("POD_NAME"))
         capabilities->set("podName", podName);
@@ -2088,7 +2099,8 @@ static std::string getCapabilitiesJson(bool convertToAvailable)
 
     if (COOLWSD::IndirectionServerEnabled && COOLWSD::GeolocationSetup)
     {
-        std::string timezoneName = Util::getIANATimezone();
+        std::string timezoneName =
+            config::getString("indirection_endpoint.geolocation_setup.timezone", "");
         if (!timezoneName.empty())
             capabilities->set("timezone", std::string(timezoneName));
     }

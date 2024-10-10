@@ -1377,6 +1377,11 @@ L.CanvasTileLayer = L.Layer.extend({
 				// widget.
 				const extracted = this._map.extractContent(textMsgHtml);
 				hyperlinkTextBox.value = extracted.trim();
+
+				const hyperlinkLinkBoxInput = document.getElementById('hyperlink-link-box-input');
+				if (extracted !== '' && hyperlinkLinkBoxInput) {
+					hyperlinkLinkBoxInput.focus();
+				}
 			} else if (this._map._clip) {
 				this._map._clip.setTextSelectionHTML(textMsgHtml, textMsgPlainText);
 			} else
@@ -1462,13 +1467,8 @@ L.CanvasTileLayer = L.Layer.extend({
 		}
 		else if (textMsg.startsWith('removesession')) {
 			var viewId = parseInt(textMsg.substring('removesession'.length + 1));
-			if (this._map._docLayer._viewId === viewId) {
-				this._map.fire('postMessage', {msgId: 'close', args: {EverModified: this._map._everModified, Deprecated: true}});
-				this._map.fire('postMessage', {msgId: 'UI_Close', args: {EverModified: this._map._everModified}});
-				if (!this._map._disableDefaultAction['UI_Close']) {
-					this._map.remove();
-				}
-			}
+			if (this._map._docLayer._viewId === viewId)
+				app.dispatcher.dispatch('closeapp');
 		}
 		else if (textMsg.startsWith('calcfunctionlist:')) {
 			this._onCalcFunctionListMsg(textMsg.substring('calcfunctionlist:'.length + 1));
@@ -2590,7 +2590,7 @@ L.CanvasTileLayer = L.Layer.extend({
 				this._cellCSelections.setPointSet(pointSet);
 
 			this._map.removeLayer(this._map._textInput._cursorHandler); // User selected a text, we remove the carret marker.
-			if (L.Browser.hasNavigatorClipboardWrite) {
+			if (L.Browser.clipboardApiAvailable) {
 				// Just set the selection type, no fetch of the content.
 				this._map._clip.setTextSelectionType('text');
 			} else {

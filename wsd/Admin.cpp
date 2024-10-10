@@ -13,6 +13,8 @@
 
 #include <chrono>
 #include <iomanip>
+#include <sstream>
+#include <string>
 #include <sys/poll.h>
 #include <unistd.h>
 
@@ -22,6 +24,7 @@
 #include "Admin.hpp"
 #include "AdminModel.hpp"
 #include "Auth.hpp"
+#include "ConfigUtil.hpp"
 #include <Common.hpp>
 #include <Log.hpp>
 #include <Protocol.hpp>
@@ -131,9 +134,11 @@ void AdminSocketHandler::handleMessage(const std::vector<char> &payload)
     else if (tokens.equals(0, "version"))
     {
         // Send COOL version information
-        sendTextFrame("coolserver " +
-                      Util::getVersionJSON(EnableExperimental, COOLWSD::IndirectionServerEnabled &&
-                                                                   COOLWSD::GeolocationSetup));
+        std::string timezoneName;
+        if (COOLWSD::IndirectionServerEnabled && COOLWSD::GeolocationSetup)
+            timezoneName = config::getString("indirection_endpoint.geolocation_setup.timezone", "");
+
+        sendTextFrame("coolserver " + Util::getVersionJSON(EnableExperimental, timezoneName));
 
         // Send LOKit version information
         sendTextFrame("lokitversion " + COOLWSD::LOKitVersion);
@@ -689,6 +694,17 @@ void Admin::pollingThread()
                 _pendingConnects.erase(_pendingConnects.begin());
                 connectToMonitorSync(rec.getUri());
             }
+        }
+
+        bool dumpMetrics = true;
+        if (_dumpMetrics.compare_exchange_strong(dumpMetrics, false))
+        {
+            std::ostringstream oss;
+            oss << "Admin Metrics:\n";
+            getMetrics(oss);
+            const std::string str = oss.str();
+            fprintf(stderr, "%s\n", str.c_str());
+            LOG_TRC(str);
         }
 
         // Handle websockets & other work.

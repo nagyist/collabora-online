@@ -131,12 +131,12 @@ public:
 #if ENABLE_SSL
             if (helpers::haveSsl())
                 return StreamSocket::create<SslStreamSocket>(
-                    std::string(), fd, type, false, std::make_shared<ServerRequestHandler>());
+                    std::string(), fd, type, false, HostType::Other, std::make_shared<ServerRequestHandler>());
             else
-                return StreamSocket::create<StreamSocket>(std::string(), fd, type, false,
+                return StreamSocket::create<StreamSocket>(std::string(), fd, type, false, HostType::Other,
                                                           std::make_shared<ServerRequestHandler>());
 #else
-            return StreamSocket::create<StreamSocket>(std::string(), fd, type, false,
+            return StreamSocket::create<StreamSocket>(std::string(), fd, type, false, HostType::Other,
                                                       std::make_shared<ServerRequestHandler>());
 #endif
         }
@@ -185,7 +185,8 @@ void HttpRequestTests::testSslHostname()
     {
         const std::string host = "localhost";
         std::shared_ptr<SslStreamSocket> socket = StreamSocket::create<SslStreamSocket>(
-            host, _port, Socket::Type::All, false, std::make_shared<ServerRequestHandler>());
+            host, _port, Socket::Type::All, false, HostType::LocalHost,
+            std::make_shared<ServerRequestHandler>());
         LOK_ASSERT_EQUAL(host, socket->getSslServername());
     }
 #endif
@@ -642,7 +643,7 @@ void HttpRequestTests::testSimplePost_External()
     LOK_ASSERT(httpResponse->statusLine().statusCategory()
                == http::StatusLine::StatusCodeClass::Successful);
 
-    const std::string body = httpResponse->getBody();
+    const std::string& body = httpResponse->getBody();
     LOK_ASSERT(!body.empty());
     std::cerr << "[" << body << "]\n";
     LOK_ASSERT(body.find(data) != std::string::npos);

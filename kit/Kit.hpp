@@ -264,6 +264,9 @@ private:
         _queue->putCallback(-1, type, payload);
     }
 
+    /// Cleanup bgSave child processes.
+    static void reapZombieChildren();
+
 public:
     /// Request loading a document, or a new view, if one exists,
     /// and register callbacks.
@@ -322,7 +325,8 @@ private:
 
     static std::string makeRenderParams(const std::string& renderOpts, const std::string& userName,
                                         const std::string& spellOnline, const std::string& theme,
-                                        const std::string& backgroundTheme);
+                                        const std::string& backgroundTheme,
+                                        const std::string& userPrivateInfo);
     bool isTileRequestInsideVisibleArea(const TileCombined& tileCombined);
 
 public:

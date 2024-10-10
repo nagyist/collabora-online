@@ -37,7 +37,6 @@
     <sys_template_path desc="Path to a template tree with shared libraries etc to be used as source for chroot jails for child processes." type="path" relative="true" default="systemplate"></sys_template_path>
     <child_root_path desc="Path to the directory under which the chroot jails for the child processes will be created. Should be on the same file system as systemplate and lotemplate. Must be an empty directory." type="path" relative="true" default="jails"></child_root_path>
     <mount_jail_tree desc="Controls whether the systemplate and lotemplate contents are mounted or not, which is much faster than the default of linking/copying each file." type="bool" default="true"></mount_jail_tree>
-    <mount_namespaces desc="Use mount namespaces instead of coolmount." type="bool" default="true"></mount_namespaces>
 
     <server_name desc="External hostname:port of the server running coolwsd. If empty, it's derived from the request (please set it if this doesn't work). May be specified when behind a reverse-proxy or when the hostname is not reachable directly." type="string" default=""></server_name>
     <file_server_root_path desc="Path to the directory that should be considered root for the file server. This should be the directory containing cool." type="path" relative="true" default="browser/../"></file_server_root_path>
@@ -45,7 +44,7 @@
     <experimental_features desc="Enable/Disable experimental features" type="bool" default="@ENABLE_EXPERIMENTAL@">@ENABLE_EXPERIMENTAL@</experimental_features>
 
     <memproportion desc="The maximum percentage of available memory consumed by all of the @APP_NAME@ processes, after which we start cleaning up idle documents. If cgroup memory limits are set, this is the maximum percentage of that limit to consume." type="double" default="80.0"></memproportion>
-    <num_prespawn_children desc="Number of child processes to keep started in advance and waiting for new clients." type="uint" default="4">@NUM_PRESPAWN_CHILDREN@</num_prespawn_children>
+    <num_prespawn_children desc="Number of child processes to keep started in advance and waiting for new clients." type="uint" default="@NUM_PRESPAWN_CHILDREN@">@NUM_PRESPAWN_CHILDREN@</num_prespawn_children>
     <!-- <fetch_update_check desc="Every number of hours will fetch latest version data. Defaults to 10 hours." type="uint" default="10">10</fetch_update_check> -->
     <!-- <allow_update_popup desc="Allows notification about an update in the editor" type="bool" default="true">true</allow_update_popup> -->
     <per_document desc="Document-specific settings, including LO Core settings.">
@@ -195,10 +194,10 @@
         <!-- switches from https:// + wss:// to http:// + ws:// -->
         <enable type="bool" desc="Controls whether SSL encryption between coolwsd and the network is enabled (do not disable for production deployment). If default is false, must first be compiled with SSL support to enable." default="@ENABLE_SSL@">@ENABLE_SSL@</enable>
         <!-- SSL off-load can be done in a proxy, if so disable SSL, and enable termination below in production -->
-        <termination desc="Connection via proxy where coolwsd acts as working via https, but actually uses http." type="bool" default="true">false</termination>
-        <cert_file_path desc="Path to the cert file" relative="false">/etc/coolwsd/cert.pem</cert_file_path>
-        <key_file_path desc="Path to the key file" relative="false">/etc/coolwsd/key.pem</key_file_path>
-        <ca_file_path desc="Path to the ca file" relative="false">/etc/coolwsd/ca-chain.cert.pem</ca_file_path>
+        <termination desc="Connection via proxy where coolwsd acts as working via https, but actually uses http." type="bool" default="false">false</termination>
+        <cert_file_path desc="Path to the cert file" relative="false">@COOLWSD_CONFIGDIR@/cert.pem</cert_file_path>
+        <key_file_path desc="Path to the key file" relative="false">@COOLWSD_CONFIGDIR@/key.pem</key_file_path>
+        <ca_file_path desc="Path to the ca file" relative="false">@COOLWSD_CONFIGDIR@/ca-chain.cert.pem</ca_file_path>
         <ssl_verification desc="Enable or disable SSL verification of hosts remote to coolwsd. If true SSL verification will be strict, otherwise certs of hosts will not be verified. You may have to disable it in test environments with self-signed certificates." type="string" default="@SSL_VERIFY@">@SSL_VERIFY@</ssl_verification>
         <cipher_list desc="List of OpenSSL ciphers to accept" default="ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH"></cipher_list>
         <hpkp desc="Enable HTTP Public key pinning" enable="false" report_only="false">
@@ -229,7 +228,7 @@
     </security>
 
     <certificates>
-      <database_path type="string" desc="Path to the NSS certificates that are used for signing documents" default=""></database_path>
+      <database_path type="string" desc="Path to the NSS certificates that are available to all users" default=""></database_path>
     </certificates>
 
     <watermark>
@@ -324,8 +323,9 @@
       <migration_timeout_secs desc="The maximum number of seconds waiting for shutdown migration message from indirection server before unloading an document. Defaults to 180 second." type="uint" default="180"></migration_timeout_secs>
       <geolocation_setup>
         <enable desc="Enable geolocation_setup when using indirection server with geolocation configuration" type="bool" default="false">false</enable>
+        <timezone desc="IANA timezone of server. For example: Europe/Berlin "></timezone>
       </geolocation_setup>
-      <server_name desc="server name to show in cluster overview admin panel"></server_name>
+      <server_name desc="server name to show in cluster overview admin panel" type="string" default=""></server_name>
     </indirection_endpoint>
 
     @LOCK_CONFIGURATION@
@@ -346,5 +346,9 @@
         <enable desc="Enable WASM support" type="bool" default="false"></enable>
         <force desc="When enabled, all requests are redirected to WASM." type="bool" default="false"></force>
     </wasm>
+
+    <document_signing desc="Document signing settings">
+        <enable desc="Enable document signing" type="bool" default="true">true</enable>
+    </document_signing>
 
 </config>

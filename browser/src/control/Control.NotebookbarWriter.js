@@ -311,7 +311,21 @@ L.Control.NotebookbarWriter = L.Control.Notebookbar.extend({
 						'accessibility': { focusBack: true,	combination: 'I', de: 'I' }
 					}
 				]
+		});
+		if (window.documentSigningEnabled) {
+			content.push({
+				'type': 'container',
+				'children': [
+					{
+						'id': 'signature',
+						'type': 'bigtoolitem',
+						'text': _('Signature'),
+						'command': '.uno:Signature',
+						'accessibility': { focusBack: true, combination: 'SN' }
+					}
+				]
 			});
+		}
 
 		content.push({
 			'type': 'container',
@@ -2357,7 +2371,7 @@ L.Control.NotebookbarWriter = L.Control.Notebookbar.extend({
 							},
 							{
 								'type': 'toolitem',
-								'text': _UNO('.uno:DeleteColumns', 'text'),
+								'text': _UNO('.uno:DeleteColumns', 'text', true),
 								'command': '.uno:DeleteColumns'
 							}
 						]
@@ -2377,7 +2391,7 @@ L.Control.NotebookbarWriter = L.Control.Notebookbar.extend({
 							},
 							{
 								'type': 'toolitem',
-								'text': _UNO('.uno:DeleteRows', 'text'),
+								'text': _UNO('.uno:DeleteRows', 'text', true),
 								'command': '.uno:DeleteRows'
 							}
 						]
@@ -2444,7 +2458,7 @@ L.Control.NotebookbarWriter = L.Control.Notebookbar.extend({
 			},
 			{
 				'type': 'bigtoolitem',
-				'text': _UNO('.uno:EntireCell', 'text'),
+				'text': _UNO('.uno:EntireCell', 'text', true),
 				'command': '.uno:EntireCell'
 			},
 			{
@@ -2455,12 +2469,12 @@ L.Control.NotebookbarWriter = L.Control.Notebookbar.extend({
 						'children': [
 							{
 								'type': 'toolitem',
-								'text': _UNO('.uno:EntireColumn', 'text'),
+								'text': _UNO('.uno:EntireColumn', 'presentation'),
 								'command': '.uno:EntireColumn'
 							},
 							{
 								'type': 'toolitem',
-								'text': _UNO('.uno:SelectTable', 'text'),
+								'text': _UNO('.uno:SelectTable', 'text', true),
 								'command': '.uno:SelectTable'
 							},
 						]
@@ -2470,12 +2484,12 @@ L.Control.NotebookbarWriter = L.Control.Notebookbar.extend({
 						'children': [
 							{
 								'type': 'toolitem',
-								'text': _UNO('.uno:EntireRow', 'text'),
+								'text': _UNO('.uno:EntireRow', 'presentation'),
 								'command': '.uno:EntireRow'
 							},
 							{
 								'type': 'toolitem',
-								'text': _UNO('.uno:DeleteTable', 'text'),
+								'text': _UNO('.uno:DeleteTable', 'text', true),
 								'command': '.uno:DeleteTable'
 							},
 						]

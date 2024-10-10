@@ -80,20 +80,27 @@ void CheckFileInfo::checkFileInfo(int redirectLimit)
                                                                   startTime);
 
         // Note: we don't log the response if obfuscation is enabled, except for failures.
-        std::string wopiResponse = httpResponse->getBody();
+        const std::string& wopiResponse = httpResponse->getBody();
         const bool failed = (httpResponse->statusLine().statusCode() != http::StatusCode::OK);
 
-        Log::Level level = failed ? Log::Level::ERR : Log::Level::TRC;
-        if (Log::isEnabled(level))
+        if (Log::isEnabled(failed ? Log::Level::ERR : Log::Level::TRC))
         {
             std::ostringstream oss;
             oss << "WOPI::CheckFileInfo " << (failed ? "failed" : "returned") << " for URI ["
                 << uriAnonym << "]: " << httpResponse->statusLine().statusCode() << ' '
                 << httpResponse->statusLine().reasonPhrase()
                 << ". Headers: " << httpResponse->header()
-                << (failed ? "\tBody: [" + wopiResponse + ']' : std::string());
-            LOG_END_FLUSH(oss);
-            Log::log(level, oss.str());
+                << (failed ? "\tBody: [" + COOLProtocol::getAbbreviatedMessage(wopiResponse) + ']'
+                           : std::string());
+
+            if (failed)
+            {
+                LOG_ERR(oss.str());
+            }
+            else
+            {
+                LOG_TRC(oss.str());
+            }
         }
 
         if (failed)
@@ -112,10 +119,9 @@ void CheckFileInfo::checkFileInfo(int redirectLimit)
 
         if (JsonUtil::parseJSON(wopiResponse, _wopiInfo))
         {
-            if (COOLWSD::AnonymizeUserData)
-                LOG_DBG("WOPI::CheckFileInfo (" << callDurationMs << "): anonymizing...");
-            else
-                LOG_DBG("WOPI::CheckFileInfo (" << callDurationMs << "): " << wopiResponse);
+            LOG_DBG("WOPI::CheckFileInfo ("
+                    << callDurationMs
+                    << "): " << (COOLWSD::AnonymizeUserData ? "obfuscated" : wopiResponse));
 
             _state = State::Pass;
         }
@@ -123,14 +129,11 @@ void CheckFileInfo::checkFileInfo(int redirectLimit)
         {
             _state = State::Fail;
 
-            if (COOLWSD::AnonymizeUserData)
-                wopiResponse = "obfuscated";
-
             LOG_ERR("WOPI::CheckFileInfo ("
                     << callDurationMs
                     << ") failed or no valid JSON payload returned. Access denied. "
                        "Original response: ["
-                    << wopiResponse << ']');
+                    << COOLProtocol::getAbbreviatedMessage(wopiResponse) << ']');
         }
 
         if (_onFinishCallback)

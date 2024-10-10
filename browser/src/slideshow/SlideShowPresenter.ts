@@ -25,14 +25,58 @@ interface VideoInfo {
 	height: number;
 }
 
+interface ClickRect {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
+function hitTest(bounds: ClickRect, x: number, y: number) {
+	return (
+		x >= bounds.x &&
+		x <= bounds.x + bounds.width &&
+		y >= bounds.y &&
+		y <= bounds.y + bounds.height
+	);
+}
+
+interface ClickAction {
+	action:
+		| 'bookmark'
+		| 'document'
+		| 'prevpage'
+		| 'nextpage'
+		| 'firstpage'
+		| 'lastpage'
+		| 'sound'
+		| 'verb'
+		| 'program'
+		| 'macro'
+		| 'stoppresentation';
+	bookmark?: string;
+	document?: string;
+	sound?: string;
+	verb?: string;
+	program?: string;
+	macro?: string;
+}
+
+interface Interaction {
+	bounds: ClickRect;
+	clickAction?: ClickAction;
+}
+
 interface SlideInfo {
 	hash: string;
 	index: number;
+	name: string;
 	empty: boolean;
 	hidden?: boolean;
 	masterPage: string;
 	masterPageObjectsVisibility: boolean;
 	videos: Array<VideoInfo>;
+	interactions: Array<Interaction>;
 	transitionDuration: number;
 	nextSlideDuration: number;
 	transitionDirection: boolean;
@@ -72,6 +116,7 @@ class SlideShowPresenter {
 	_canvasLoader: CanvasLoader | null = null;
 	_isAnimationPlaying: boolean = false;
 	_isPresentInWindow: boolean = false;
+	private _pauseTimer: PauseTimerGl | PauseTimer2d;
 	private _slideShowHandler: SlideShowHandler;
 	private _slideShowNavigator: SlideShowNavigator;
 	private _metaPresentation: MetaPresentation;
@@ -145,7 +190,8 @@ class SlideShowPresenter {
 			);
 			this.centerCanvas();
 		} else {
-			this._stopFullScreen();
+			// we need to cleanup current/prev slide
+			this._slideShowNavigator.quit();
 		}
 	}
 
@@ -159,6 +205,7 @@ class SlideShowPresenter {
 			'keydown',
 			this._slideShowNavigator.onKeyDown.bind(this._slideShowNavigator),
 		);
+
 		L.DomUtil.remove(this._slideShowCanvas);
 		this._slideShowCanvas = null;
 		if (this._presenterContainer) {
@@ -182,8 +229,7 @@ class SlideShowPresenter {
 			if (info?.isEndless == undefined || !info.isEndless) {
 				if (this._currentSlide + 1 === this._getSlidesCount()) {
 					this._currentSlide++;
-					this.exitSlideshowWithWarning();
-					return;
+					if (this.exitSlideshowWithWarning()) return;
 				}
 				this._closeSlideShowWindow();
 				this._stopFullScreen();
@@ -306,10 +352,13 @@ class SlideShowPresenter {
 		return canvas;
 	}
 
-	private exitSlideshowWithWarning() {
+	exitSlideshowWithWarning(): boolean {
+		// TODO 2D version for disabled webGL
+		if (this._slideRenderer._context.is2dGl()) return false;
 		new SlideShow.StaticTextRenderer(this._slideRenderer._context).display(
 			_('Click to exit presentation...'),
 		);
+		return true;
 	}
 
 	private startTimer(loopAndRepeatDuration: number) {
@@ -320,21 +369,22 @@ class SlideShowPresenter {
 		);
 		const PauseTimerType =
 			renderContext instanceof RenderContextGl ? PauseTimerGl : PauseTimer2d;
-		const pauseTimer: PauseTimer = new PauseTimerType(
+		this._pauseTimer = new PauseTimerType(
 			renderContext,
 			loopAndRepeatDuration,
 			onTimeoutHandler,
 		);
 
-		pauseTimer.startTimer();
+		this._pauseTimer.startTimer();
 	}
 
 	endPresentation(force: boolean) {
 		console.debug('SlideShowPresenter.endPresentation');
+		if (this._pauseTimer) this._pauseTimer.stopTimer();
+
 		const settings = this._presentationInfo;
 		if (force || !settings.isEndless) {
-			if (!force) {
-				this.exitSlideshowWithWarning();
+			if (!force && this.exitSlideshowWithWarning()) {
 				return;
 			}
 			this._closeSlideShowWindow();
@@ -386,7 +436,8 @@ class SlideShowPresenter {
 			transitionParameters.context = this._slideRenderer._context;
 			transitionParameters.current = currentTexture;
 			transitionParameters.next = nextTexture;
-			transitionParameters.slideInfo = slideInfo;
+			transitionParameters.transitionFilterInfo =
+				TransitionFilterInfo.fromSlideInfo(slideInfo);
 			transitionParameters.callback = () => {
 				this._slideRenderer.renderSlide(
 					nextTexture,
@@ -470,8 +521,8 @@ class SlideShowPresenter {
 	}
 
 	_doFallbackPresentation() {
-		// TODO: fallback to "open in new tab"
 		this._stopFullScreen();
+		this._doInWindowPresentation();
 	}
 
 	_doInWindowPresentation() {
@@ -685,6 +736,11 @@ class SlideShowPresenter {
 		const numberOfSlides = this._getSlidesCount();
 		if (numberOfSlides === 0) return;
 
+		if (!this.getCanvas()) {
+			console.debug('onSlideShowInfo: no canvas available');
+			return;
+		}
+
 		let skipTransition = false;
 
 		if (!this._metaPresentation) {
@@ -735,6 +791,16 @@ class SlideShowPresenter {
 		this._slideShowCanvas.width = canvasSize[0];
 		this._slideShowCanvas.height = canvasSize[1];
 		this.centerCanvas();
+
+		// animated elements needs to update canvas size
+		this._metaPresentation.getMetaSlides().forEach((metaSlide) => {
+			if (metaSlide.animationsHandler) {
+				const animElemMap = metaSlide.animationsHandler.getAnimatedElementMap();
+				animElemMap.forEach((animatedElement) => {
+					animatedElement.updateCanvasSize(canvasSize);
+				});
+			}
+		});
 
 		this.startLoader();
 

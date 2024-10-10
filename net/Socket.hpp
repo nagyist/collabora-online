@@ -36,9 +36,7 @@
 #include "Buffer.hpp"
 #include "SigUtil.hpp"
 
-#if MOBILEAPP
 #include "FakeSocket.hpp"
-#endif
 
 #ifdef __linux__
 #define HAVE_ABSTRACT_UNIX_SOCKETS
@@ -150,12 +148,15 @@ public:
         LOG_TRC("Socket dtor");
 
         // Doesn't block on sockets; no error handling needed.
-#if !MOBILEAPP
-        ::close(_fd);
-        LOG_DBG("Closed socket to [" << clientAddress() << ']');
-#else
-        fakeSocketClose(_fd);
-#endif
+        if constexpr (!Util::isMobileApp())
+        {
+            ::close(_fd);
+            LOG_DBG("Closed socket to [" << clientAddress() << ']');
+        }
+        else
+        {
+            fakeSocketClose(_fd);
+        }
     }
 
     /// Create socket of the given type.
@@ -181,11 +182,10 @@ public:
         if (_noShutdown)
             return;
         LOG_TRC("Socket shutdown RDWR.");
-#if !MOBILEAPP
-        ::shutdown(_fd, SHUT_RDWR);
-#else
-        fakeSocketShutdown(_fd);
-#endif
+        if constexpr (!Util::isMobileApp())
+            ::shutdown(_fd, SHUT_RDWR);
+        else
+            fakeSocketShutdown(_fd);
     }
 
     /// Prepare our poll record; adjust @timeoutMaxMs downwards
@@ -205,19 +205,21 @@ public:
     /// manage latency issues around packet aggregation
     void setNoDelay()
     {
-#if !MOBILEAPP
-        const int val = 1;
-        if (::setsockopt(_fd, IPPROTO_TCP, TCP_NODELAY, (char *) &val, sizeof(val)) == -1)
+        if constexpr (!Util::isMobileApp())
         {
-            static std::once_flag once;
-            std::call_once(once,
-                           [&]() {
-                               LOG_WRN("Failed setsockopt TCP_NODELAY. Will not report further "
-                                       "failures to set TCP_NODELAY: "
-                                       << strerror(errno));
-                           });
+            const int val = 1;
+            if (::setsockopt(_fd, IPPROTO_TCP, TCP_NODELAY, (char*)&val, sizeof(val)) == -1)
+            {
+                static std::once_flag once;
+                std::call_once(once,
+                               [&]()
+                               {
+                                   LOG_WRN("Failed setsockopt TCP_NODELAY. Will not report further "
+                                           "failures to set TCP_NODELAY: "
+                                           << strerror(errno));
+                               });
+            }
         }
-#endif
     }
 
 #if !MOBILEAPP
@@ -383,19 +385,19 @@ private:
         _owner = std::this_thread::get_id();
         LOG_TRC("Created socket. Thread affinity set to " << Log::to_string(_owner));
 
-#if !MOBILEAPP
-#if ENABLE_DEBUG
-        if (std::getenv("COOL_ZERO_BUFFER_SIZE"))
+        if constexpr (!Util::isMobileApp())
         {
-            const int oldSize = getSocketBufferSize();
-            setSocketBufferSize(0);
-            LOG_TRC("Buffer size: " << getSendBufferSize() << " (was " << oldSize << ')');
+#if ENABLE_DEBUG
+            if (std::getenv("COOL_ZERO_BUFFER_SIZE"))
+            {
+                const int oldSize = getSocketBufferSize();
+                setSocketBufferSize(0);
+                LOG_TRC("Buffer size: " << getSendBufferSize() << " (was " << oldSize << ')');
+            }
+#endif
         }
-#endif
-#endif
     }
 
-private:
     std::string _clientAddress;
     const int _fd;
 
@@ -473,7 +475,7 @@ public:
     // -----------------------------------------------------------------
     //            Interface for external MessageHandlers
     // -----------------------------------------------------------------
-public:
+
     void setMessageHandler(const std::shared_ptr<MessageHandlerInterface> &msgHandler)
     {
         _msgHandler = msgHandler;
@@ -633,7 +635,7 @@ public:
     {
         LOG_DBG("Stopping SocketPoll thread " << _name);
         _stop = true;
-        if (!Util::isMobileApp())
+        if constexpr (!Util::isMobileApp())
         {
             // We don't want to risk some callbacks in _newCallbacks being invoked when we start
             // running a thread for this SocketPoll again.
@@ -704,11 +706,10 @@ public:
         // wakeup the main-loop.
         int rc;
         do {
-#if !MOBILEAPP
-            rc = ::write(fd, "w", 1);
-#else
-            rc = fakeSocketWrite(fd, "w", 1);
-#endif
+            if constexpr (!Util::isMobileApp())
+                rc = ::write(fd, "w", 1);
+            else
+                rc = fakeSocketWrite(fd, "w", 1);
         } while (rc == -1 && errno == EINTR);
 
         if (rc == -1 && errno != EAGAIN && errno != EWOULDBLOCK)
@@ -937,7 +938,9 @@ public:
 
 enum SharedFDType { SMAPS, URPToKit, URPFromKit };
 
-/// A plain, non-blocking, data streaming socket.
+enum HostType : uint8_t { LocalHost, Other };
+
+// A plain, non-blocking, data streaming socket.
 class StreamSocket : public Socket,
                      public std::enable_shared_from_this<StreamSocket>
 {
@@ -950,15 +953,15 @@ public:
 
     /// Create a StreamSocket from native FD.
     StreamSocket(std::string host, const int fd, Type type, bool /* isClient */,
-                 ReadType readType = NormalRead) :
+                 HostType hostType, ReadType readType = NormalRead) :
         Socket(fd, type),
         _hostname(std::move(host)),
         _bytesSent(0),
         _bytesRecvd(0),
         _wsState(WSState::HTTP),
+        _isLocalHost(hostType == LocalHost),
         _closed(false),
         _sentHTTPContinue(false),
-        _dumpingNestingLevel(0),
         _shutdownSignalled(false),
         _readType(readType),
         _inputProcessingEnabled(true),
@@ -990,6 +993,7 @@ public:
     bool isClosed() const { return _closed; }
     bool isWebSocket() const { return _wsState == WSState::WS; }
     void setWebSocket() { _wsState = WSState::WS; }
+    bool isLocalHost() const { return _isLocalHost; }
 
     /// Returns the peer hostname, if set.
     const std::string& hostname() const { return _hostname; }
@@ -1135,73 +1139,77 @@ public:
             return false; // error - close it.
         }
 
-#if !MOBILEAPP
-        // SSL decodes blocks of 16Kb, so for efficiency we use the same.
-        char buf[16 * 1024];
         ssize_t len = 0;
-        int last_errno = 0;
-        do
+        if constexpr (!Util::isMobileApp())
         {
-            // Drain the read buffer.
-            // Note: we read as much as possible as
-            // we are typically capped by hardware buffer
-            // size anyway, and better to drain it fast.
+            // SSL decodes blocks of 16Kb, so for efficiency we use the same.
+            char buf[16 * 1024];
+            int last_errno = 0;
             do
             {
-                len = readData(buf, sizeof(buf));
-                if (len < 0)
-                    last_errno = errno; // Save only on error.
+                // Drain the read buffer.
+                // Note: we read as much as possible as
+                // we are typically capped by hardware buffer
+                // size anyway, and better to drain it fast.
+                do
+                {
+                    len = readData(buf, sizeof(buf));
+                    if (len < 0)
+                        last_errno = errno; // Save only on error.
 
-                if (len < 0 && last_errno != EAGAIN && last_errno != EWOULDBLOCK)
-                    LOG_SYS_ERRNO(last_errno,
-                                  "Read failed, have " << _inBuffer.size() << " buffered bytes");
-                else if (len < 0)
-                    LOGA_TRC(Socket, "Read failed ("
-                            << len << "), have " << _inBuffer.size() << " buffered bytes ("
-                            << Util::symbolicErrno(last_errno) << ": " << std::strerror(last_errno)
-                            << ')');
-                else if (len == 0)
-                    LOGA_TRC(Socket, "Read closed (0), have " << _inBuffer.size() << " buffered bytes");
-                else // Success.
-                    LOGA_TRC(Socket, "Read " << len << " bytes in addition to " << _inBuffer.size()
-                             << " buffered bytes"
+                    if (len < 0 && last_errno != EAGAIN && last_errno != EWOULDBLOCK)
+                        LOG_SYS_ERRNO(last_errno, "Read failed, have " << _inBuffer.size()
+                                                                       << " buffered bytes");
+                    else if (len < 0)
+                        LOGA_TRC(Socket, "Read failed (" << len << "), have " << _inBuffer.size()
+                                                         << " buffered bytes ("
+                                                         << Util::symbolicErrno(last_errno) << ": "
+                                                         << std::strerror(last_errno) << ')');
+                    else if (len == 0)
+                        LOGA_TRC(Socket,
+                                 "Read closed (0), have " << _inBuffer.size() << " buffered bytes");
+                    else // Success.
+                        LOGA_TRC(Socket, "Read "
+                                             << len << " bytes in addition to " << _inBuffer.size()
+                                             << " buffered bytes"
 #ifdef LOG_SOCKET_DATA
-                             << (len ? Util::dumpHex(std::string(buf, len), ":\n") : std::string())
+                                             << (len ? Util::dumpHex(std::string(buf, len), ":\n")
+                                                     : std::string())
 #endif
-                    );
-            } while (len < 0 && last_errno == EINTR);
+                        );
+                } while (len < 0 && last_errno == EINTR);
 
-            if (len > 0)
-            {
-                LOG_ASSERT_MSG(len <= ssize_t(sizeof(buf)),
-                               "Read more data than the buffer size");
-                _bytesRecvd += len;
-                _inBuffer.append(&buf[0], len);
-            }
-            // else poll will handle errors.
+                if (len > 0)
+                {
+                    LOG_ASSERT_MSG(len <= ssize_t(sizeof(buf)),
+                                   "Read more data than the buffer size");
+                    _bytesRecvd += len;
+                    _inBuffer.append(&buf[0], len);
+                }
+                // else poll will handle errors.
+            } while (len == (sizeof(buf)));
+
+            // Restore errno from the read call.
+            errno = last_errno;
         }
-        while (len == (sizeof(buf)));
-
-        // Restore errno from the read call.
-        errno = last_errno;
-#else
-        LOG_TRC("readIncomingData #" << getFD());
-        ssize_t available = fakeSocketAvailableDataLength(getFD());
-        ssize_t len;
-        if (available == -1)
-            len = -1;
-        else if (available == 0)
-            len = 0;
         else
         {
-            std::vector<char>buf(available);
-            len = readData(buf.data(), available);
-            assert(len == available);
-            _bytesRecvd += len;
-            assert(_inBuffer.empty());
-            _inBuffer.append(buf.data(), len);
+            LOG_TRC("readIncomingData #" << getFD());
+            ssize_t available = fakeSocketAvailableDataLength(getFD());
+            if (available == -1)
+                len = -1;
+            else if (available == 0)
+                len = 0;
+            else
+            {
+                std::vector<char> buf(available);
+                len = readData(buf.data(), available);
+                assert(len == available);
+                _bytesRecvd += len;
+                assert(_inBuffer.empty());
+                _inBuffer.append(buf.data(), len);
+            }
         }
-#endif
 
         return len;
     }
@@ -1224,7 +1232,8 @@ public:
     /// We need this helper since the handler needs a shared_ptr to the socket
     /// but we can't have a shared_ptr in the ctor.
     template <typename TSocket>
-    static std::shared_ptr<TSocket> create(std::string hostname, const int fd, Type type, bool isClient,
+    static std::shared_ptr<TSocket> create(std::string hostname, const int fd, Type type,
+                                           bool isClient, HostType hostType,
                                            std::shared_ptr<ProtocolHandlerInterface> handler,
                                            ReadType readType = NormalRead)
     {
@@ -1233,7 +1242,7 @@ public:
             throw std::runtime_error("StreamSocket " + std::to_string(fd) +
                                      " expects a valid SocketHandler instance.");
 
-        auto socket = std::make_shared<TSocket>(std::move(hostname), fd, type, isClient, readType);
+        auto socket = std::make_shared<TSocket>(std::move(hostname), fd, type, isClient, hostType, readType);
         socket->setHandler(std::move(handler));
 
         return socket;
@@ -1306,7 +1315,7 @@ public:
     /// buffer for an optimal transmission.
     int getSendBufferCapacity() const
     {
-        if (Util::isMobileApp())
+        if constexpr (Util::isMobileApp())
             return INT_MAX; // We want to always send a single record in one go
         const int capacity = getSendBufferSize();
         return std::max<int>(0, capacity - _outBuffer.size());
@@ -1323,8 +1332,6 @@ public:
     }
 
 protected:
-
-    std::vector<std::pair<size_t, size_t>> findChunks(Poco::Net::HTTPRequest &request);
 
     /// Called when a polling event is received.
     /// @events is the mask of events that triggered the wake.
@@ -1451,12 +1458,6 @@ protected:
             disposition.setClosed();
     }
 
-    void handshakeFail()
-    {
-        if (_socketHandler)
-            _socketHandler->onHandshakeFail();
-    }
-
 public:
     /// Override to write data out to socket.
     /// Returns the last return from writeData.
@@ -1522,6 +1523,12 @@ public:
     void dumpState(std::ostream& os) override;
 
 protected:
+    void handshakeFail()
+    {
+        if (_socketHandler)
+            _socketHandler->onHandshakeFail();
+    }
+
     /// Reads data with file descriptors as control data if received.
     /// Can be used only with Unix sockets.
     int readFDs(char* buf, int len, std::vector<int>& fds)
@@ -1615,7 +1622,6 @@ protected:
         return _shutdownSignalled;
     }
 
-protected:
 #if ENABLE_DEBUG
     /// Return true and set errno to simulate an error
     bool simulateSocketError(bool read);
@@ -1636,14 +1642,14 @@ private:
 
     enum class WSState { HTTP, WS } _wsState;
 
+    /// True if host is localhost
+    bool _isLocalHost;
+
     /// True if we are already closed.
     bool _closed;
 
     /// True if we've received a Continue in response to an Expect: 100-continue
     bool _sentHTTPContinue;
-
-    /// Track recursive dumping
-    int _dumpingNestingLevel;
 
     /// True when shutdown was requested via shutdown().
     /// It's accessed from different threads.

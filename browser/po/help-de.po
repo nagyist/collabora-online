@@ -2,8 +2,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2024-09-16 14:25+0200\n"
-"PO-Revision-Date: 2024-09-13 14:13+0000\n"
+"POT-Creation-Date: 2024-10-09 07:43+0200\n"
+"PO-Revision-Date: 2024-09-17 01:26+0000\n"
 "Last-Translator: Andras Timar <andras.timar@collabora.com>\n"
 "Language-Team: German <https://hosted.weblate.org/projects/collabora-online/"
 "help/de/>\n"
@@ -3182,15 +3182,14 @@ msgid "Select the text with the existing format"
 msgstr "Wählen Sie den Text mit dem vorhandenen Format aus"
 
 #: html/cool-help.html%2Bdiv.div.div.div.ol.li.p:756-11
-#, fuzzy
 msgid ""
 "Click on the clone formatting icon <img class=\"icon-size\" alt=\"\" src="
 "\"images/lc_formatpaintbrush.svg\" />. The mouse pointer turns to a paint "
 "bucket."
 msgstr ""
 "Klicken Sie auf das Symbol Formatierung übertragen <img class=\"icon-size\" "
-"alt=\"\" src=\"images/lc_formatpaintbrush.svg\">. Der Mauszeiger verwandelt "
-"sich in einen Farbeimer."
+"alt=\"\" src=\"images/lc_formatpaintbrush.svg\" />. Der Mauszeiger "
+"verwandelt sich in einen Farbeimer."
 
 #: html/cool-help.html%2Bdiv.div.div.div.ol.li.p:757-11
 msgid "Select the text you want to apply the new format."
@@ -3317,13 +3316,12 @@ msgstr ""
 "mehr."
 
 #: html/cool-help.html%2Bdiv.div.div.div.ol.li.p:799-11
-#, fuzzy
 msgid ""
 "Click on the clone formatting icon <img class=\"icon-size\" src=\"images"
 "/lc_formatpaintbrush.svg\" />. The mouse pointer turns to a paint bucket."
 msgstr ""
 "Klicken Sie auf das Symbol Formatierung übertragen <img class=\"icon-size\" "
-"src=\"images/lc_formatpaintbrush.svg\">. Der Mauszeiger verwandelt sich in "
+"src=\"images/lc_formatpaintbrush.svg\" />. Der Mauszeiger verwandelt sich in "
 "einen Farbeimer."
 
 #: html/cool-help.html%2Bdiv.div.div.div.ol.li.p:800-11

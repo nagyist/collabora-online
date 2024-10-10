@@ -9,17 +9,17 @@
 
 #include "Unit.hpp"
 
-#include <iostream>
 #include <cassert>
 #include <condition_variable>
+#include <csignal>
 #include <dlfcn.h>
-#include <fstream>
+#include <iostream>
 #include <mutex>
 #include <sstream>
 #include <sysexits.h>
 #include <thread>
+#include <unistd.h>
 
-#include "JsonUtil.hpp"
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Poco/Util/Application.h>
 
@@ -27,10 +27,10 @@
 #include "Util.hpp"
 #include <test/testlog.hpp>
 
+#include <common/JsonUtil.hpp>
+#include <common/Message.hpp>
 #include <common/SigUtil.hpp>
 #include <common/StringVector.hpp>
-#include <common/Message.hpp>
-#include <unistd.h>
 
 UnitKit *GlobalKit = nullptr;
 UnitWSD *GlobalWSD = nullptr;
@@ -56,7 +56,7 @@ bool EnableExperimental = false;
 UnitBase** UnitBase::linkAndCreateUnit([[maybe_unused]] UnitType type,
                                        [[maybe_unused]] const std::string& unitLibPath)
 {
-    if (Util::isMobileApp())
+    if constexpr (Util::isMobileApp())
         return nullptr;
     DlHandle = dlopen(unitLibPath.c_str(), RTLD_GLOBAL|RTLD_NOW);
     if (!DlHandle)
@@ -206,7 +206,7 @@ void UnitBase::selfTest()
 
 bool UnitBase::init([[maybe_unused]] UnitType type, [[maybe_unused]] const std::string& unitLibPath)
 {
-    if (!Util::isMobileApp())
+    if constexpr (!Util::isMobileApp())
         LOG_ASSERT(!get(type));
     else
     {
@@ -722,7 +722,7 @@ void UnitWSD::onExitTest(TestResult result, const std::string&)
         if (result != TestResult::Ok && !GlobalTestOptions.getKeepgoing())
         {
             LOG_TST("Failing fast per options, even though there are more tests");
-            if (!Util::isMobileApp())
+            if constexpr (!Util::isMobileApp())
             {
                 LOG_TST("Setting TerminationFlag as the Test Suite failed");
                 SigUtil::setTerminationFlag(); // and wake-up world.
@@ -741,7 +741,7 @@ void UnitWSD::onExitTest(TestResult result, const std::string&)
                                  << " was the last test. Finishing "
                                  << (GlobalResult == TestResult::Ok ? "SUCCESS" : "FAILED"));
 
-    if (!Util::isMobileApp())
+    if constexpr (!Util::isMobileApp())
     {
         LOG_TST("Setting TerminationFlag as there are no more tests");
         SigUtil::setTerminationFlag(); // and wake-up world.
@@ -776,7 +776,7 @@ void UnitKit::onExitTest(TestResult, const std::string&)
     //                              << " was the last test. Finishing "
     //                              << (GlobalResult == TestResult::Ok ? "SUCCESS" : "FAILED"));
 
-    if (!Util::isMobileApp())
+    if constexpr (!Util::isMobileApp())
     {
         // LOG_TST("Setting TerminationFlag as there are no more tests");
         SigUtil::setTerminationFlag(); // and wake-up world.

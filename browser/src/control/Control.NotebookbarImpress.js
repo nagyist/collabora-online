@@ -309,7 +309,22 @@ L.Control.NotebookbarImpress = L.Control.NotebookbarWriter.extend({
 						'command': '.uno:SetDocumentProperties'
 					}
 				]
-			},
+		});
+		if (window.documentSigningEnabled) {
+			content.push({
+				'type': 'container',
+				'children': [
+					{
+						'id': 'signature',
+						'type': 'bigtoolitem',
+						'text': _('Signature'),
+						'command': '.uno:Signature',
+						'accessibility': { focusBack: true, combination: 'SN' }
+					}
+				]
+			});
+		}
+		content.push(
 			{
 				'type': 'container',
 				'children': [
@@ -1527,6 +1542,13 @@ L.Control.NotebookbarImpress = L.Control.NotebookbarWriter.extend({
 					}
 				],
 				'vertical': 'true'
+			},
+			{
+				'id': 'layout-interaction',
+				'type': 'bigtoolitem',
+				'text': _UNO('.uno:AnimationEffects', 'presentation'),
+				'command': '.uno:AnimationEffects',
+				'accessibility': { focusBack: true, combination: 'IA', de: null }
 			},
 			{
 				'id': 'layout-navigator',

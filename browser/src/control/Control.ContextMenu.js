@@ -53,6 +53,7 @@ L.Control.ContextMenu = L.Control.extend({
 					  'InsertAxisTitle', 'InsertMinorGrid', 'InsertMajorGrid' , 'InsertAxis', 'DeleteMajorGrid' , 'DeleteMinorGrid',
 					  'SpellCheckIgnoreAll', 'LanguageStatus', 'SpellCheckApplySuggestion', 'PageDialog',
 					  'CompressGraphic', 'GraphicDialog', 'InsertCaptionDialog',
+					  'AnimationEffects', 'ExecuteAnimationEffect',
 					  'NextTrackedChange', 'PreviousTrackedChange', 'RejectTrackedChange', 'AcceptTrackedChange', 'InsertAnnotation'],
 
 			text: ['TableInsertMenu',
@@ -235,7 +236,7 @@ L.Control.ContextMenu = L.Control.extend({
 			}
 
 			// reduce Paste Special submenu
-			if (item.type === 'menu' && item.text.replace('~', '') === 'Paste Special'
+			if (item.type === 'menu' && item.text && item.text.replace('~', '') === 'Paste Special'
 				&& item.menu && item.menu.length) {
 				item.text = _('Paste Special');
 				item.command = '.uno:PasteSpecial';
@@ -243,7 +244,7 @@ L.Control.ContextMenu = L.Control.extend({
 				item.menu = undefined;
 			}
 
-			if (item.type === 'command' && item.text.replace('~', '') === 'Copy Cells'
+			if (item.type === 'command' && item.text && item.text.replace('~', '') === 'Copy Cells'
 				&& item.menu && item.menu.length) {
 				item.text = _('Copy Cells');
 				item.command = '.uno:AutoFill?Copy:bool=true';
@@ -251,7 +252,7 @@ L.Control.ContextMenu = L.Control.extend({
 				item.menu = undefined;
 			}
 
-			if (item.type === 'command' && item.text.replace('~', '') === 'Fill Series'
+			if (item.type === 'command' && item.text && item.text.replace('~', '') === 'Fill Series'
 				&& item.menu && item.menu.length) {
 				item.text = _('Fill Series');
 				item.command = '.uno:AutoFill?Copy:bool=false';
@@ -296,7 +297,9 @@ L.Control.ContextMenu = L.Control.extend({
 				if (commandName == 'None' && !item.text)
 					continue;
 
-				if (hasParam || commandName === 'None' || commandName === 'FontDialogForParagraph' || commandName === 'Delete') {
+				if (hasParam || commandName === 'None' || commandName === 'FontDialogForParagraph' || commandName === 'Delete' || commandName == 'PasteSpecial') {
+					// These commands have a custom item.text, don't overwrite
+					// that with a label based on 'item.command'.
 					itemName = window.removeAccessKey(item.text);
 					itemName = itemName.replace(' ', '\u00a0');
 				} else {

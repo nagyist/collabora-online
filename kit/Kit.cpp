@@ -35,6 +35,7 @@
 #include <utime.h>
 #include <sys/time.h>
 #include <sys/resource.h>
+#include <sys/wait.h>
 #include <sysexits.h>
 
 #include <atomic>
@@ -1536,9 +1537,38 @@ bool Document::forkToSave(const std::function<void()> &childSave, int viewId)
         getLOKit()->setForkedChild(false);
 
         startThreads();
+
+        // What better time than to reap while saving?
+        reapZombieChildren();
     }
     return true;
 #endif // !MOBILEAPP
+}
+
+void Document::reapZombieChildren()
+{
+    /// Normally, we reap children when the WebSocket is disconnected.
+    /// See BgSaveParentWebSocketHandler::onDisconnect().
+    /// This works well, except when the kernel is slower to unmap the
+    /// pages, close descriptors, etc. than we do the waitpid(2) in
+    /// onDisconnect(). It seems for small documents, that have a small
+    /// memory footprint, unloading the process is fast, and we reap it.
+    /// For large documents, however, the process ends up a zombie.
+    /// Here, we reap any zombies that might exist--at most 1.
+    int status = 0;
+    pid_t pid;
+    while ((pid = ::waitpid(-1, &status, WUNTRACED | WNOHANG)) > 0)
+    {
+        if (WIFSIGNALED(status) && (WTERMSIG(status) == SIGSEGV || WTERMSIG(status) == SIGBUS ||
+                                    WTERMSIG(status) == SIGABRT))
+        {
+            LOG_WRN("BgSave zombie child " << pid << " has exited abnormally");
+        }
+        else
+        {
+            LOG_DBG("Reaped zombie BgSave child " << pid);
+        }
+    }
 }
 
 void Document::notifyViewInfo()
@@ -1773,8 +1803,9 @@ std::shared_ptr<lok::Document> Document::load(const std::shared_ptr<ChildSession
     const std::string& macroSecurityLevel = session->getMacroSecurityLevel();
     const bool accessibilityState = session->getAccessibilityState();
     const std::string& userTimezone = session->getTimezone();
+    const std::string& userPrivateInfo = session->getUserPrivateInfo();
 
-    if (!Util::isMobileApp())
+    if constexpr (!Util::isMobileApp())
         consistencyCheckFileExists(uri);
 
     std::string options;
@@ -1939,12 +1970,13 @@ std::shared_ptr<lok::Document> Document::load(const std::shared_ptr<ChildSession
 
     std::string backgroundTheme = getDefaultBackgroundTheme(session);
 
+    // Avoid logging userPrivateInfo till it's not anonymized.
     LOG_INF("Initializing for rendering session [" << sessionId << "] on document url [" <<
-            anonymizeUrl(_url) << "] with: [" << makeRenderParams(_renderOpts, userNameAnonym, spellOnline, theme, backgroundTheme) << "].");
+            anonymizeUrl(_url) << "] with: [" << makeRenderParams(_renderOpts, userNameAnonym, spellOnline, theme, backgroundTheme, "") << "].");
 
     // initializeForRendering() should be called before
     // registerCallback(), as the previous creates a new view in Impress.
-    const std::string renderParams = makeRenderParams(_renderOpts, userName, spellOnline, theme, backgroundTheme);
+    const std::string renderParams = makeRenderParams(_renderOpts, userName, spellOnline, theme, backgroundTheme, userPrivateInfo);
 
     _loKitDocument->initializeForRendering(renderParams.c_str());
 
@@ -2088,7 +2120,8 @@ Object::Ptr makePropertyValue(const std::string& type, const T& val)
 
 /* static */ std::string Document::makeRenderParams(const std::string& renderOpts, const std::string& userName,
                                                     const std::string& spellOnline, const std::string& theme,
-                                                    const std::string& backgroundTheme)
+                                                    const std::string& backgroundTheme,
+                                                    const std::string& userPrivateInfo)
 {
     Object::Ptr renderOptsObj;
 
@@ -2104,11 +2137,43 @@ Object::Ptr makePropertyValue(const std::string& type, const T& val)
         renderOptsObj = new Object();
     }
 
+    Object::Ptr userPrivateInfoObj;
+    if (!userPrivateInfo.empty())
+    {
+        Parser parser;
+        Poco::Dynamic::Var var = parser.parse(userPrivateInfo);
+        userPrivateInfoObj = var.extract<Object::Ptr>();
+    }
+    else
+    {
+        userPrivateInfoObj = new Object();
+    }
+
     // Append name of the user, if any, who opened the document to rendering options
     if (!userName.empty())
     {
         // userName must be decoded already.
         renderOptsObj->set(".uno:Author", makePropertyValue("string", userName));
+    }
+
+    // Extract settings relevant as view options from userPrivateInfo.
+    std::string signatureCert;
+    JsonUtil::findJSONValue(userPrivateInfoObj, "SignatureCert", signatureCert);
+    if (!signatureCert.empty())
+    {
+        renderOptsObj->set(".uno:SignatureCert", makePropertyValue("string", signatureCert));
+    }
+    std::string signatureKey;
+    JsonUtil::findJSONValue(userPrivateInfoObj, "SignatureKey", signatureKey);
+    if (!signatureKey.empty())
+    {
+        renderOptsObj->set(".uno:SignatureKey", makePropertyValue("string", signatureKey));
+    }
+    std::string signatureCa;
+    JsonUtil::findJSONValue(userPrivateInfoObj, "SignatureCa", signatureCa);
+    if (!signatureCa.empty())
+    {
+        renderOptsObj->set(".uno:SignatureCa", makePropertyValue("string", signatureCa));
     }
 
     // By default we enable spell-checking, unless it's disabled explicitly.
@@ -2310,13 +2375,13 @@ void Document::drainQueue()
     catch (const std::exception& exc)
     {
         LOG_FTL("drainQueue: Exception: " << exc.what());
-        if (!Util::isMobileApp())
+        if constexpr (!Util::isMobileApp())
             flushAndExit(EX_SOFTWARE);
     }
     catch (...)
     {
         LOG_FTL("drainQueue: Unknown exception");
-        if (!Util::isMobileApp())
+        if constexpr (!Util::isMobileApp())
             flushAndExit(EX_SOFTWARE);
     }
 }
@@ -2464,8 +2529,14 @@ void Document::dumpState(std::ostream& oss)
         << "\n\tduringLoad: " << _duringLoad
         << "\n\tmodified: " << name(_modified)
         << "\n\tbgSaveProc: " << _isBgSaveProcess
-        << "\n\tbgSaveDisabled: "<< _isBgSaveDisabled
-        << "\n";
+        << "\n\tbgSaveDisabled: "<< _isBgSaveDisabled;
+
+    std::string smap;
+    if (const ssize_t size = FileUtil::readFile("/proc/self/smaps_rollup", smap); size <= 0)
+        oss << "\n  smaps_rollup: <unavailable>";
+    else
+        oss << "\n  smaps_rollup: " << smap;
+    oss << '\n';
 
     // dumpState:
     // TODO: _websocketHandler - but this is an odd one.
@@ -2477,7 +2548,7 @@ void Document::dumpState(std::ostream& oss)
             << " editorId: " << it.second->getDoc()->getEditorId()
             << " mobileAppDocId: " << it.second->getDoc()->getMobileAppDocId();
     }
-    oss << "\n";
+    oss << '\n';
 
     _deltaPool.dumpState(oss);
     _sessions.dumpState(oss);
@@ -2492,7 +2563,7 @@ void Document::dumpState(std::ostream& oss)
         oss << "\n\t\tviewId: " << it.first
             << " last update time(ms): " << ms;
     }
-    oss << "\n";
+    oss << '\n';
 
     oss << "\tspeedCount:";
     for (const auto &it : _speedCount)
@@ -2513,14 +2584,14 @@ void Document::dumpState(std::ostream& oss)
             << " readOnly: " << it.second.isReadOnly()
             << " connected: " << it.second.isConnected();
     }
-    oss << "\n";
+    oss << '\n';
 
     char *pState = nullptr;
     _loKit->dumpState("", &pState);
     oss << "lok state:\n";
     if (pState)
         oss << pState;
-    oss << "\n";
+    oss << '\n';
 }
 
 #if !defined BUILDING_TESTS && !MOBILEAPP && !LIBFUZZER
@@ -2779,7 +2850,7 @@ int KitSocketPoll::kitPoll(int timeoutMicroS)
     if (_document)
         _document->trimAfterInactivity();
 
-    if (!Util::isMobileApp())
+    if constexpr (!Util::isMobileApp())
     {
         flushTraceEventRecordings();
 
@@ -2898,7 +2969,7 @@ bool anyInputCallback(void* data)
 
     // Have no pending callbacks and the tile queue is also empty, report that we have no
     // pending input events.
-    return true;
+    return false;
 }
 
 /// Called by LOK main-loop

@@ -378,6 +378,20 @@ bool FileServerRequestHandler::isAdminLoggedIn(const HTTPRequest& request, http:
     std::atomic<unsigned> lastLocalId;
     std::vector<std::shared_ptr<LocalFileInfo>> LocalFileInfo::fileInfoVec;
 
+    /// Reads the content of `path`, returns an empty string on failure.
+    std::string readFileToString(const std::string& path)
+    {
+        if (!FileUtil::Stat(path).exists())
+        {
+            return {};
+        }
+
+        std::ifstream stream(path);
+        std::stringstream buffer;
+        buffer << stream.rdbuf();
+        return buffer.str();
+    }
+
     //handles request starts with /wopi/files
     void handleWopiRequest(const HTTPRequest& request,
                            const RequestDetails &requestDetails,
@@ -423,6 +437,26 @@ bool FileServerRequestHandler::isAdminLoggedIn(const HTTPRequest& request, http:
             fileInfo->set("OwnerId", "test");
             fileInfo->set("UserId", userId);
             fileInfo->set("UserFriendlyName", userNameString);
+
+            Poco::JSON::Object::Ptr userPrivateInfo = new Poco::JSON::Object();
+            // If there is matching sign data next to the file to be loaded, use it.
+            std::string signatureCert = readFileToString(localPath + ".cert.pem");
+            if (!signatureCert.empty())
+            {
+                userPrivateInfo->set("SignatureCert", signatureCert);
+            }
+            std::string signatureKey = readFileToString(localPath + ".key.pem");
+            if (!signatureKey.empty())
+            {
+                userPrivateInfo->set("SignatureKey", signatureKey);
+            }
+            std::string signatureCa = readFileToString(localPath + ".ca.pem");
+            if (!signatureCa.empty())
+            {
+                userPrivateInfo->set("SignatureCa", signatureCa);
+            }
+            fileInfo->set("UserPrivateInfo", userPrivateInfo);
+
             fileInfo->set("UserCanWrite", (requestDetails.getParam("permission") != "readonly") ? "true": "false");
             fileInfo->set("PostMessageOrigin", postMessageOrigin);
             fileInfo->set("LastModifiedTime", localFile->getLastModifiedTime());
@@ -1252,8 +1286,6 @@ FileServerRequestHandler::ResourceAccessDetails FileServerRequestHandler::prepro
     Poco::replaceInPlace(preprocess, CHECK_FILE_INFO_OVERRIDE,
                          checkFileInfoToJSON(urv[CHECK_FILE_INFO_OVERRIDE]));
     Poco::replaceInPlace(preprocess, std::string("%WOPI_HOST_ID%"), form.get("host_session_id", ""));
-    Poco::replaceInPlace(preprocess, std::string("%PROXY_PREFIX_ENABLED%"),
-                         (COOLWSD::IsProxyPrefixEnabled ? std::string("true") : std::string("false")));
 
     const auto& config = Application::instance().config();
 
@@ -1308,7 +1340,7 @@ FileServerRequestHandler::ResourceAccessDetails FileServerRequestHandler::prepro
     else
         Poco::replaceInPlace(preprocess, std::string("%BROWSER_LOGGING%"), std::string());
 
-    const unsigned int outOfFocusTimeoutSecs = config.getUInt("per_view.out_of_focus_timeout_secs", 60);
+    const unsigned int outOfFocusTimeoutSecs = config.getUInt("per_view.out_of_focus_timeout_secs", 300);
     Poco::replaceInPlace(preprocess, std::string("%OUT_OF_FOCUS_TIMEOUT_SECS%"), std::to_string(outOfFocusTimeoutSecs));
     const unsigned int idleTimeoutSecs = config.getUInt("per_view.idle_timeout_secs", 900);
     Poco::replaceInPlace(preprocess, std::string("%IDLE_TIMEOUT_SECS%"), std::to_string(idleTimeoutSecs));
@@ -1381,6 +1413,7 @@ FileServerRequestHandler::ResourceAccessDetails FileServerRequestHandler::prepro
 
     Poco::replaceInPlace(preprocess, std::string("%DEEPL_ENABLED%"), boolToString(config.getBool("deepl.enabled", false)));
     Poco::replaceInPlace(preprocess, std::string("%ZOTERO_ENABLED%"), boolToString(config.getBool("zotero.enable", true)));
+    Poco::replaceInPlace(preprocess, std::string("%DOCUMENT_SIGNING_ENABLED%"), boolToString(config.getBool("document_signing.enable", true)));
     Poco::replaceInPlace(preprocess, std::string("%WASM_ENABLED%"), boolToString(COOLWSD::getConfigValue<bool>("wasm.enable", false)));
     Poco::URI indirectionURI(config.getString("indirection_endpoint.url", ""));
     Poco::replaceInPlace(preprocess, std::string("%INDIRECTION_URL%"), indirectionURI.toString());

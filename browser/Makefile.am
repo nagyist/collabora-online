@@ -191,6 +191,7 @@ COOL_LIBS_JS_DST = $(patsubst %.js,$(DIST_FOLDER)/%.js,$(COOL_LIBS_JS))
 # this list includes both Javascript and Typescript generated files
 # in a rather precise order.
 COOL_JS_LST =\
+	src/app/DocUtil.ts \
 	src/docstate.js \
 	src/docstatefunctions.js \
 	src/docdispatcher.ts \
@@ -391,6 +392,7 @@ COOL_JS_LST =\
 	src/control/Control.SheetsBar.js \
 	src/control/Control.PresentationBar.js \
 	src/control/Control.TopToolbar.js \
+	src/control/Control.SaveState.ts \
 	src/control/Control.UIManager.js \
 	src/control/Control.DocumentNameInput.js \
 	src/control/Control.Notebookbar.js \
@@ -417,6 +419,7 @@ COOL_JS_LST =\
 	src/control/VRuler.ts \
 	src/slideshow/SlideCache.ts \
 	src/slideshow/SlideCompositor.ts \
+	src/slideshow/LayerRenderer.ts \
 	src/slideshow/LayerDrawing.ts \
 	src/slideshow/LayersCompositor.ts \
 	src/slideshow/RenderContext.ts \
@@ -517,7 +520,7 @@ COOL_JS_LST =\
 	src/slideshow/transition/FlipTilesTransition.ts \
 	src/slideshow/transition/StaticNoiseTransition.ts \
 	src/slideshow/transition/MicsShapeWipeTransition.ts \
-	src/slideshow/operation/RotateAndScaleDepthByWidth.ts \
+	src/slideshow/operation/RotateAndScaleDepth.ts \
 	src/slideshow/operation/SEllipseTranslate.ts \
 	src/slideshow/operation/SRotate.ts \
 	src/slideshow/operation/SScale.ts \
@@ -918,6 +921,7 @@ pot:
 		src/control/Control.Scroll.Annotation.js \
 		src/control/Control.MobileSearchBar.ts \
 		src/control/Control.ServerAuditDialog.ts \
+		src/control/Control.SaveState.ts \
 		src/control/Control.SheetsBar.js \
 		src/control/Control.Sidebar.ts \
 		src/control/Control.StatusBar.js \
@@ -966,6 +970,7 @@ pot:
 		src/control/jsdialog/Widget.TreeView.js \
 		src/slideshow/SlideCache.ts \
 		src/slideshow/SlideCompositor.ts \
+		src/slideshow/LayerRenderer.ts \
 		src/slideshow/LayerDrawing.ts \
 		src/slideshow/LayersCompositor.ts \
 		src/slideshow/RenderContext.ts \
@@ -1066,7 +1071,7 @@ pot:
 		src/slideshow/transition/DissolveTransition3d.ts \
 		src/slideshow/transition/FlipTilesTransition.ts \
 		src/slideshow/transition/MicsShapeWipeTransition.ts \
-		src/slideshow/operation/RotateAndScaleDepthByWidth.ts \
+		src/slideshow/operation/RotateAndScaleDepth.ts \
 		src/slideshow/operation/SEllipseTranslate.ts \
 		src/slideshow/operation/SRotate.ts \
 		src/slideshow/operation/SScale.ts \
@@ -1076,6 +1081,7 @@ pot:
 		src/docstate.js \
 		src/docstatefunctions.js \
 		src/docdispatcher.ts \
+		src/app/DocUtil.ts \
 		src/app/DocEvents.ts \
 		src/app/GraphicSelectionMiddleware.ts \
 		src/errormessages.js \

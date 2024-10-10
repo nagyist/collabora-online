@@ -168,6 +168,10 @@ abstract class SlideRenderer {
 		return null;
 	}
 
+	public createTransparentTexture(): WebGLTexture | ImageBitmap {
+		return null;
+	}
+
 	public notifyAnimationStarted(sId: string) {
 		const isAnyLayerActive = this.isAnyLayerActive();
 		this._activeLayers.add(sId);
@@ -369,6 +373,10 @@ class SlideRendererGl extends SlideRenderer {
 		return this._context.createEmptySlide();
 	}
 
+	public createTransparentTexture(): WebGLTexture | ImageBitmap {
+		return this._context.createTransparentTexture();
+	}
+
 	public deleteCurrentSlideTexture(): void {
 		this._context.deleteTexture(this._slideTexture);
 		this._slideTexture = null;
@@ -482,6 +490,7 @@ class SlideRendererGl extends SlideRenderer {
 				gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
 				this.updateTexture(video.getTexture(), video.videoElement);
 				gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+				gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
 			}
 		}
 

@@ -18,6 +18,7 @@ abstract class BaseContainerNode extends BaseNode {
 	private bDurationIndefinite: boolean;
 	private nLeftIterations: number;
 	private eImpressNodeType: ImpressNodeType;
+	protected bIsEffect: boolean = false;
 
 	protected constructor(
 		aNodeInfo: AnimationNodeInfo,
@@ -42,6 +43,12 @@ abstract class BaseContainerNode extends BaseNode {
 
 		const aNodeInfo: ContainerNodeInfo = this.aNodeInfo;
 
+		if (this.getParentNode() && this.getParentNode().isMainSequenceRootNode()) {
+			if (this.getBegin().getEventType() !== EventTrigger.OnNext) {
+				this.bIsFirstAutoEffect = true;
+			}
+		}
+
 		// nodeType property
 		this.eImpressNodeType = ImpressNodeType.Default;
 		if (aNodeInfo.nodeType && aNodeInfo.nodeType in ImpressNodeType) {
@@ -53,6 +60,8 @@ abstract class BaseContainerNode extends BaseNode {
 			this.eImpressNodeType === ImpressNodeType.MainSequence;
 		this.bIsInteractiveSequenceRootNode =
 			this.eImpressNodeType === ImpressNodeType.InteractiveSequence;
+
+		this.bIsEffect = !!this.aNodeInfo.presetId;
 
 		for (const childNode of this.aChildrenArray) {
 			childNode.parseNodeInfo();
@@ -247,7 +256,7 @@ abstract class BaseContainerNode extends BaseNode {
 
 		if (verbose) {
 			if (this.getImpressNodeType())
-				sInfo += '; nodeType: ' + ImpressNodeType[this.getImpressNodeType()];
+				sInfo += `; \x1B[31mnodeType: ${ImpressNodeType[this.getImpressNodeType()]}\x1B[m`;
 		}
 
 		for (const child of this.aChildrenArray) {
@@ -255,6 +264,10 @@ abstract class BaseContainerNode extends BaseNode {
 			sInfo += child.info(verbose);
 		}
 		return sInfo;
+	}
+
+	isEmpty() {
+		return this.aChildrenArray.length === 0;
 	}
 }
 
@@ -314,7 +327,7 @@ class SequentialTimeContainer extends BaseContainerNode {
 			if (this.resolveChild(this.aChildrenArray[this.nFinishedChildren])) break;
 			else
 				window.app.console.log(
-					'SequentialTimeContainer.activate_st: resolving child failed!',
+					`SequentialTimeContainer(${this.getId()}).activate_st: resolving child(${this.nFinishedChildren}) failed!`,
 				);
 		}
 

@@ -32,8 +32,6 @@
 namespace net
 {
 
-#if !MOBILEAPP
-
 std::string HostEntry::makeIPAddress(const sockaddr* ai_addr)
 {
     char addrstr[INET6_ADDRSTRLEN];
@@ -126,6 +124,8 @@ HostEntry::HostEntry(const std::string& desc, const char* port)
 
 HostEntry::~HostEntry() = default;
 
+#if !MOBILEAPP
+
 struct DNSCacheEntry
 {
     std::string queryAddress;
@@ -174,7 +174,7 @@ public:
 
 HostEntry resolveDNS(const std::string& addressToCheck)
 {
-    static DNSResolver resolver;
+    thread_local DNSResolver resolver;
     return resolver.resolveDNS(addressToCheck, std::string());
 }
 
@@ -189,42 +189,34 @@ std::vector<std::string> resolveAddresses(const std::string& addressToCheck)
     return hostEntry.getAddresses();
 }
 
-std::string resolveOneAddress(const std::string& addressToCheck)
+std::string HostEntry::resolveHostAddress() const
 {
-    HostEntry hostEntry = resolveDNS(addressToCheck);
-    const auto& addresses = hostEntry.getAddresses();
-    if (addresses.empty())
-        throw Poco::Net::NoAddressFoundException(addressToCheck);
-    return addresses[0];
+    if (!_ipAddresses.empty())
+        return _ipAddresses[0];
+
+    LOG_WRN("resolveDNS(\"" << _requestName << "\") failed");
+
+    try
+    {
+        return Poco::Net::IPAddress(_requestName).toString();
+    }
+    catch (const Poco::Exception& exc1)
+    {
+        LOG_WRN("Poco::Net::IPAddress(\"" << _requestName
+                                          << "\") failed: " << exc1.displayText());
+    }
+
+    return _requestName;
 }
 
 std::string resolveHostAddress(const std::string& targetHost)
 {
-    try
-    {
-        return resolveOneAddress(targetHost);
-    }
-    catch (const Poco::Exception& exc)
-    {
-        LOG_WRN("Poco::Net::DNS::resolveOne(\"" << targetHost
-                                                << "\") failed: " << exc.displayText());
-        try
-        {
-            return Poco::Net::IPAddress(targetHost).toString();
-        }
-        catch (const Poco::Exception& exc1)
-        {
-            LOG_WRN("Poco::Net::IPAddress(\"" << targetHost
-                                              << "\") failed: " << exc1.displayText());
-        }
-    }
-
-    return targetHost;
+    return resolveDNS(targetHost).resolveHostAddress();
 }
 
-bool isLocalhost(const std::string& targetHost)
+bool HostEntry::isLocalhost() const
 {
-    const std::string targetAddress = resolveHostAddress(targetHost);
+    const std::string targetAddress = resolveHostAddress();
 
     const Poco::Net::NetworkInterface::NetworkInterfaceList list =
         Poco::Net::NetworkInterface::list(true, true);
@@ -234,15 +226,20 @@ bool isLocalhost(const std::string& targetHost)
         address = address.substr(0, address.find('%', 0));
         if (address == targetAddress)
         {
-            LOG_TRC("Host [" << targetHost << "] is on the same host as the client: \""
+            LOG_TRC("Host [" << _requestName << "] is on the same host as the client: \""
                              << targetAddress << "\".");
             return true;
         }
     }
 
-    LOG_TRC("Host [" << targetHost << "] is not on the same host as the client: \"" << targetAddress
+    LOG_TRC("Host [" << _requestName << "] is not on the same host as the client: \"" << targetAddress
                      << "\".");
     return false;
+}
+
+bool isLocalhost(const std::string& targetHost)
+{
+    return resolveDNS(targetHost).isLocalhost();
 }
 
 void AsyncDNS::startThread()
@@ -414,12 +411,19 @@ asyncConnect(const std::string& host, const std::string& port, const bool isSSL,
                     else
                     {
                         Socket::Type type = ai->ai_family == AF_INET ? Socket::Type::IPv4 : Socket::Type::IPv6;
+                        HostType hostType = hostEntry.isLocalhost() ? HostType::LocalHost : HostType::Other;
 #if ENABLE_SSL
                         if (isSSL)
-                            socket = StreamSocket::create<SslStreamSocket>(host, fd, type, true, protocolHandler);
+                        {
+                            socket = StreamSocket::create<SslStreamSocket>(host, fd, type, true,
+                                                                           hostType, protocolHandler);
+                        }
 #endif
                         if (!socket && !isSSL)
-                            socket = StreamSocket::create<StreamSocket>(host, fd, type, true, protocolHandler);
+                        {
+                            socket = StreamSocket::create<StreamSocket>(host, fd, type, true,
+                                                                        hostType, protocolHandler);
+                        }
 
                         if (socket)
                         {
@@ -474,15 +478,10 @@ connect(const std::string& host, const std::string& port, const bool isSSL,
     }
 #endif
 
-    // FIXME: store the address?
-    struct addrinfo* ainfo = nullptr;
-    struct addrinfo hints;
-    std::memset(&hints, 0, sizeof(hints));
-    const int rc = getaddrinfo(host.c_str(), port.c_str(), &hints, &ainfo);
-
-    if (!rc && ainfo)
+    HostEntry hostEntry(host, !port.empty() ? port.c_str() : nullptr);
+    if (const addrinfo* ainfo = hostEntry.getAddrInfo())
     {
-        for (struct addrinfo* ai = ainfo; ai; ai = ai->ai_next)
+        for (const addrinfo* ai = ainfo; ai; ai = ai->ai_next)
         {
             if (ai->ai_addrlen && ai->ai_addr)
             {
@@ -502,12 +501,19 @@ connect(const std::string& host, const std::string& port, const bool isSSL,
                 else
                 {
                     Socket::Type type = ai->ai_family == AF_INET ? Socket::Type::IPv4 : Socket::Type::IPv6;
+                    HostType hostType = hostEntry.isLocalhost() ? HostType::LocalHost : HostType::Other;
 #if ENABLE_SSL
                     if (isSSL)
-                        socket = StreamSocket::create<SslStreamSocket>(host, fd, type, true, protocolHandler);
+                    {
+                        socket = StreamSocket::create<SslStreamSocket>(host, fd, type, true,
+                                                                       hostType, protocolHandler);
+                    }
 #endif
                     if (!socket && !isSSL)
-                        socket = StreamSocket::create<StreamSocket>(host, fd, type, true, protocolHandler);
+                    {
+                        socket = StreamSocket::create<StreamSocket>(host, fd, type, true,
+                                                                    hostType, protocolHandler);
+                    }
 
                     if (socket)
                     {
@@ -522,8 +528,6 @@ connect(const std::string& host, const std::string& port, const bool isSSL,
                 }
             }
         }
-
-        freeaddrinfo(ainfo);
     }
     else
         LOG_SYS("Failed to lookup host [" << host << "]. Skipping");

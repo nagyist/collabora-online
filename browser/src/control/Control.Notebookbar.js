@@ -263,7 +263,8 @@ L.Control.Notebookbar = L.Control.extend({
 						'type': 'toolitem',
 						'text': _('Save'),
 						'command': '.uno:Save',
-						'accessKey': '1'
+						'accessKey': '1',
+						'isCustomTooltip': true
 					} : {}
 				]
 			}
@@ -302,6 +303,9 @@ L.Control.Notebookbar = L.Control.extend({
 		}
 
 		this.builder.build(shortcutsBar, shortcutsBarData);
+
+		//create SaveState object after addition of shortcut bar in UI
+		this.map.saveState = new app.definitions.saveState(this.map);
 	},
 
 	reloadShortcutsBar: function() {
@@ -477,11 +481,9 @@ L.Control.Notebookbar = L.Control.extend({
 
 	onDarkModeToggleChange: function() {
 		if (window.prefs.getBoolean('darkTheme')) {
-			$('#toggledarktheme').addClass('selected');
 			$('#invertbackground').show();
 		}
 		else {
-			$('#toggledarktheme').removeClass('selected');
 			$('#invertbackground').hide();
 		}
 	},

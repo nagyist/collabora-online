@@ -101,7 +101,6 @@ L.Control.NotebookbarBuilder = L.Control.JSDialogBuilder.extend({
 		this._toolitemHandlers['.uno:DeleteAnnotation'] = function() {};
 		this._toolitemHandlers['.uno:NextAnnotation'] = function() {};
 		this._toolitemHandlers['.uno:PreviousAnnotation'] = function() {};
-		this._toolitemHandlers['.uno:AnimationEffects'] = function() {};
 		this._toolitemHandlers['.uno:OptimizeTable'] = function() {};
 		this._toolitemHandlers['.uno:TableDesign'] = function() {};
 		this._toolitemHandlers['.uno:ContourDialog'] = function() {};
@@ -164,9 +163,10 @@ L.Control.NotebookbarBuilder = L.Control.JSDialogBuilder.extend({
 			$('#applystyle').val(state).trigger('change');
 		}
 		else if (commandName === '.uno:ModifiedStatus') {
-			if (document.getElementById('save')) {
-				if (state === 'true') {
-					document.getElementById('save').classList.add('savemodified');
+			const saveEle = document.getElementById('save');
+			if (saveEle) {
+				if (state === 'true' &&  this.map.saveState) {
+					this.map.saveState.showModifiedStatus();
 					document.getElementById('file-save').classList.add('savemodified');
 				} else {
 					document.getElementById('save').classList.remove('savemodified');
@@ -368,6 +368,10 @@ L.Control.NotebookbarBuilder = L.Control.JSDialogBuilder.extend({
 					'action': !window.ThisIsAMobileApp ? 'exportdirectpdf' : 'downloadas-pdf',
 					'text': _('PDF Document (.pdf)'),
 					'command': !window.ThisIsAMobileApp ? 'exportdirectpdf' : 'downloadas-pdf'
+				},
+				{
+					'action': 'downloadas-html',
+					'text': _('HTML File (.html)')
 				},
 			].concat(!window.ThisIsTheAndroidApp ? [
 				{

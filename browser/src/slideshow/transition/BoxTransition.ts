@@ -22,20 +22,19 @@ class BoxTransition extends Transition2d {
 
 	constructor(transitionParameters: TransitionParameters) {
 		super(transitionParameters);
-	}
 
-	public start(): void {
-		const transitionSubType =
-			stringToTransitionSubTypeMap[this.slideInfo.transitionSubtype];
+		const transitionSubType = this.transitionFilterInfo.transitionSubtype;
 		if (
 			transitionSubType == TransitionSubType.RECTANGLE &&
-			this.slideInfo.transitionDirection
+			this.transitionFilterInfo.isDirectionForward
 		) {
 			this.direction = BoxSubType.HORIZONTAL;
 		} else {
 			this.direction = BoxSubType.VERTICAL;
 		}
+	}
 
+	public start(): void {
 		this.startTransition();
 	}
 

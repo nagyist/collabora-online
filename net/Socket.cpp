@@ -69,44 +69,46 @@ std::unique_ptr<Watchdog> SocketPoll::PollWatchdog;
 
 int Socket::createSocket([[maybe_unused]] Socket::Type type)
 {
-#if !MOBILEAPP
-    int domain = AF_UNSPEC;
-    switch (type)
+    if constexpr (!Util::isMobileApp())
     {
-    case Type::IPv4: domain = AF_INET;  break;
-    case Type::IPv6: domain = AF_INET6; break;
-    case Type::All:  domain = AF_INET6; break;
-    case Type::Unix: domain = AF_UNIX;  break;
-    default: assert(!"Unknown Socket::Type"); break;
+        int domain = AF_UNSPEC;
+        switch (type)
+        {
+        case Type::IPv4: domain = AF_INET;  break;
+        case Type::IPv6: domain = AF_INET6; break;
+        case Type::All:  domain = AF_INET6; break;
+        case Type::Unix: domain = AF_UNIX;  break;
+        default: assert(!"Unknown Socket::Type"); break;
+        }
+
+        return ::socket(domain, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
     }
 
-    return ::socket(domain, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
-#else
     return fakeSocketSocket();
-#endif
 }
 
 
 bool StreamSocket::socketpair(std::shared_ptr<StreamSocket> &parent,
                               std::shared_ptr<StreamSocket> &child)
 {
-#if MOBILEAPP
-    return false;
-#else
+    if constexpr (Util::isMobileApp())
+    {
+        return false;
+    }
+
     int pair[2];
     int rc = ::socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0, pair);
     if (rc != 0)
         return false;
 
-    child = std::make_shared<StreamSocket>("save-child", pair[0], Socket::Type::Unix, true);
+    child = std::make_shared<StreamSocket>("save-child", pair[0], Socket::Type::Unix, true, HostType::Other);
     child->setNoShutdown();
     child->setClientAddress("save-child");
-    parent = std::make_shared<StreamSocket>("save-kit-parent", pair[1], Socket::Type::Unix, true);
+    parent = std::make_shared<StreamSocket>("save-kit-parent", pair[1], Socket::Type::Unix, true, HostType::Other);
     parent->setNoShutdown();
     parent->setClientAddress("save-parent");
 
     return true;
-#endif
 }
 
 
@@ -143,7 +145,7 @@ static std::string X509_NAME_to_utf8(X509_NAME* name)
 
 bool SslStreamSocket::verifyCertificate()
 {
-    if (_verification == ssl::CertificateVerification::Disabled || net::isLocalhost(hostname()))
+    if (_verification == ssl::CertificateVerification::Disabled || isLocalHost())
     {
         return true;
     }
@@ -287,13 +289,17 @@ void SocketPoll::removeFromWakeupArray()
             getWakeupsArray().erase(it);
     }
 
-#if !MOBILEAPP
-    ::close(_wakeup[0]);
-    ::close(_wakeup[1]);
-#else
-    fakeSocketClose(_wakeup[0]);
-    fakeSocketClose(_wakeup[1]);
-#endif
+    if constexpr (!Util::isMobileApp())
+    {
+        ::close(_wakeup[0]);
+        ::close(_wakeup[1]);
+    }
+    else
+    {
+        fakeSocketClose(_wakeup[0]);
+        fakeSocketClose(_wakeup[1]);
+    }
+
     _wakeup[0] = -1;
     _wakeup[1] = -1;
 }
@@ -806,7 +812,7 @@ bool SocketPoll::insertNewUnixSocket(
 
     std::shared_ptr<StreamSocket> socket
         = StreamSocket::create<StreamSocket>(std::string(), fd, Socket::Type::Unix,
-                                             true, websocketHandler);
+                                             true, HostType::Other, websocketHandler);
     if (!socket)
     {
         LOG_ERR("Failed to create socket unix socket at " << location);
@@ -862,7 +868,8 @@ void SocketPoll::insertNewFakeSocket(
     else
     {
         std::shared_ptr<StreamSocket> socket;
-        socket = StreamSocket::create<StreamSocket>(std::string(), fd, Socket::Type::Unix, true, websocketHandler);
+        socket = StreamSocket::create<StreamSocket>(std::string(), fd, Socket::Type::Unix, true,
+                                                    HostType::Other, websocketHandler);
         if (socket)
         {
             LOG_TRC("Sending 'hello' instead of HTTP GET for now");
@@ -924,25 +931,24 @@ void WebSocketHandler::dumpState(std::ostream& os, const std::string& /*indent*/
         Util::dumpHex(os, _wsPayload, "\t\tws queued payload:\n", "\t\t");
     os << '\n';
     if (_msgHandler)
+    {
+        os << "msgHandler:\n";
         _msgHandler->dumpState(os);
+    }
 }
 
 void StreamSocket::dumpState(std::ostream& os)
 {
-    _dumpingNestingLevel++;
     int64_t timeoutMaxMicroS = SocketPoll::DefaultPollTimeoutMicroS.count();
     const int events = getPollEvents(std::chrono::steady_clock::now(), timeoutMaxMicroS);
     os << '\t' << std::setw(6) << getFD() << "\t0x" << std::hex << events << std::dec << '\t'
        << (ignoringInput() ? "ignore\t" : "process\t") << std::setw(6) << _inBuffer.size() << '\t'
        << std::setw(6) << _outBuffer.size() << '\t' << " r: " << std::setw(6) << _bytesRecvd
        << "\t w: " << std::setw(6) << _bytesSent << '\t' << clientAddress() << '\t';
-    // Only dump sockerHandler state on a top level dumpState
-    if (_dumpingNestingLevel == 1)
-        _socketHandler->dumpState(os);
+    _socketHandler->dumpState(os);
     if (_inBuffer.size() > 0)
         Util::dumpHex(os, _inBuffer, "\t\tinBuffer:\n", "\t\t");
     _outBuffer.dumpHex(os, "\t\toutBuffer:\n", "\t\t");
-    _dumpingNestingLevel--;
 }
 
 bool StreamSocket::send(const http::Response& response)
@@ -990,16 +996,16 @@ void SocketPoll::dumpState(std::ostream& os) const
     // FIXME: NOT thread-safe! _pollSockets is modified from the polling thread!
     const auto pollSockets = _pollSockets;
 
-    os << "\n  SocketPoll:";
-    os << "\n    Poll [" << name() << "] with " << pollSockets.size() << " socket"
+    os << "\n  SocketPoll [" << name() << "] with " << pollSockets.size() << " socket"
        << (pollSockets.size() == 1 ? "" : "s") << " - wakeup rfd: " << _wakeup[0]
        << " wfd: " << _wakeup[1] << '\n';
     const auto callbacks = _newCallbacks.size();
     if (callbacks > 0)
         os << "\tcallbacks: " << callbacks << '\n';
     os << "\t    fd\tevents\trbuffered\twbuffered\trtotal\twtotal\tclientaddress\n";
-    for (const auto& i : pollSockets)
-        i->dumpState(os);
+    for (const std::shared_ptr<Socket>& socket : pollSockets)
+        socket->dumpState(os);
+    os << "\n  Done [" << name() << ']';
 }
 
 /// Returns true on success only.

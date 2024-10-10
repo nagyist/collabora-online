@@ -25,6 +25,7 @@
 #include <Poco/StreamCopier.h>
 #include <Poco/URI.h>
 
+#include "ConfigUtil.hpp"
 #include "DocumentBroker.hpp"
 #include "COOLWSD.hpp"
 #include "FileServer.hpp"
@@ -37,10 +38,7 @@
 #include <common/TraceEvent.hpp>
 #include <common/Util.hpp>
 #include <common/CommandControl.hpp>
-
-#if !MOBILEAPP
 #include <net/HttpHelper.hpp>
-#endif
 
 using namespace COOLProtocol;
 
@@ -231,7 +229,7 @@ std::string ClientSession::createPublicURI(const std::string& subPath, const std
 #if !MOBILEAPP
     if (!COOLWSD::RouteToken.empty())
         meta += "&RouteToken=" + COOLWSD::RouteToken;
-#endif
+#endif // !MOBILEAPP
 
     if (!encode)
         return meta;
@@ -269,9 +267,8 @@ void ClientSession::handleClipboardRequest(DocumentBroker::ClipboardRequest     
             return; // the getclipboard already completed.
         if (type == DocumentBroker::CLIP_REQUEST_SET)
         {
-#if !MOBILEAPP
-            HttpHelper::sendErrorAndShutdown(http::StatusCode::BadRequest, socket);
-#endif
+            if constexpr (!Util::isMobileApp())
+                HttpHelper::sendErrorAndShutdown(http::StatusCode::BadRequest, socket);
         }
         else // will be handled during shutdown
         {
@@ -351,7 +348,7 @@ void ClientSession::handleClipboardRequest(DocumentBroker::ClipboardRequest     
                             return;
                         }
 
-                        std::string body = httpResponse->getBody();
+                        const std::string& body = httpResponse->getBody();
                         std::istringstream stream(body);
                         if (ClipboardData::isOwnFormat(stream))
                         {
@@ -417,9 +414,8 @@ void ClientSession::handleClipboardRequest(DocumentBroker::ClipboardRequest     
         }
         else
         {
-#if !MOBILEAPP
-            HttpHelper::sendErrorAndShutdown(http::StatusCode::BadRequest, socket);
-#endif
+            if constexpr (!Util::isMobileApp())
+                HttpHelper::sendErrorAndShutdown(http::StatusCode::BadRequest, socket);
         }
     }
 }
@@ -635,10 +631,12 @@ bool ClientSession::_handleInput(const char *buffer, int length)
             }
         }
 
+        std::string timezoneName;
+        if (COOLWSD::IndirectionServerEnabled && COOLWSD::GeolocationSetup)
+            timezoneName = config::getString("indirection_endpoint.geolocation_setup.timezone", "");
+
         // Send COOL version information
-        sendTextFrame("coolserver " +
-                      Util::getVersionJSON(EnableExperimental, COOLWSD::IndirectionServerEnabled &&
-                                                                   COOLWSD::GeolocationSetup));
+        sendTextFrame("coolserver " + Util::getVersionJSON(EnableExperimental, timezoneName));
         // Send LOKit version information
         sendTextFrame("lokitversion " + COOLWSD::LOKitVersion);
 
@@ -647,7 +645,7 @@ bool ClientSession::_handleInput(const char *buffer, int length)
         if (COOLWSD::EnableTraceEventLogging)
             sendTextFrame("enabletraceeventlogging yes");
 
-        if (!Util::isMobileApp())
+        if constexpr (!Util::isMobileApp())
         {
             // If it is not mobile, it must be Linux (for now).
             std::string osVersionInfo(COOLWSD::getConfigValue<std::string>("per_view.custom_os_info", ""));
@@ -1833,7 +1831,7 @@ bool ClientSession::handleKitToClientMessage(const std::shared_ptr<Message>& pay
 
     const bool isConvertTo = static_cast<bool>(_saveAsSocket);
 
-    if (!Util::isMobileApp())
+    if constexpr (!Util::isMobileApp())
         COOLWSD::dumpOutgoingTrace(docBroker->getJailId(), getId(), firstLine);
 
     const auto& tokens = payload->tokens();
@@ -2259,21 +2257,36 @@ bool ClientSession::handleKitToClientMessage(const std::shared_ptr<Message>& pay
         {
             docBroker->setInteractive(true);
         }
-        else if (tokens.equals(0, "status:"))
+        else if (tokens.equals(0, "loaded:"))
         {
             setState(ClientSession::SessionState::LIVE);
-            docBroker->setInteractive(false);
-            docBroker->setLoaded();
 
-            if (UnitWSD::isUnitTesting())
+            if (firstLine.find("isfirst=true") != std::string::npos)
             {
-                UnitWSD::get().onDocBrokerViewLoaded(docBroker->getDocKey(), client_from_this());
+                // The document has just loaded.
+                docBroker->setInteractive(false);
+                docBroker->setLoaded();
+
+                // Wopi post load actions.
+                if (_wopiFileInfo && !_wopiFileInfo->getTemplateSource().empty())
+                {
+                    LOG_DBG("Uploading template [" << _wopiFileInfo->getTemplateSource()
+                                                   << "] to storage after loading.");
+                    docBroker->uploadAfterLoadingTemplate(client_from_this());
+                }
             }
 
-#if !MOBILEAPP
-            Admin::instance().setViewLoadDuration(docBroker->getDocKey(), getId(), std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - _viewLoadStart));
-#endif
+            docBroker->onViewLoaded(client_from_this());
 
+#if !MOBILEAPP
+            Admin::instance().setViewLoadDuration(
+                docBroker->getDocKey(), getId(),
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - _viewLoadStart));
+#endif
+        }
+        else if (tokens.equals(0, "status:"))
+        {
             // position cursor for thumbnail rendering
             if (_thumbnailSession)
             {
@@ -2294,14 +2307,6 @@ bool ClientSession::handleKitToClientMessage(const std::shared_ptr<Message>& pay
 
                 const std::string renderThumbnailCmd = "uno .uno:OpenHyperLink " + cmd.str();
                 docBroker->forwardToChild(client_from_this(), renderThumbnailCmd);
-            }
-
-            // Wopi post load actions
-            if (_wopiFileInfo && !_wopiFileInfo->getTemplateSource().empty())
-            {
-                LOG_DBG("Uploading template [" << _wopiFileInfo->getTemplateSource()
-                                               << "] to storage after loading.");
-                docBroker->uploadAfterLoadingTemplate(client_from_this());
             }
 
             for(auto &token : tokens)

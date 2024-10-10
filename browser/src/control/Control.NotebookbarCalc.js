@@ -242,7 +242,22 @@ L.Control.NotebookbarCalc = L.Control.NotebookbarWriter.extend({
 						'accessibility': { focusBack: true,	combination: 'PR', de: null }
 					}
 				]
-			},
+		});
+		if (window.documentSigningEnabled) {
+			content.push({
+				'type': 'container',
+				'children': [
+					{
+						'id': 'signature',
+						'type': 'bigtoolitem',
+						'text': _('Signature'),
+						'command': '.uno:Signature',
+						'accessibility': { focusBack: true, combination: 'SN' }
+					}
+				]
+			});
+		}
+		content.push(
 			{
 				'type': 'container',
 				'children': [
@@ -1829,6 +1844,36 @@ L.Control.NotebookbarCalc = L.Control.NotebookbarWriter.extend({
 							},
 						]
 					},
+				],
+				'vertical': 'true'
+			},
+			{
+				'type': 'container',
+				'children': [
+					{
+						'type': 'toolbox',
+						'children': [
+							{
+								'id': 'data-add-name',
+								'type': 'toolitem',
+								'text': _UNO('.uno:AddName', 'spreadsheet'),
+								'command': '.uno:AddName',
+								'accessibility': { focusBack: true,	combination: 'DD', de: null }
+							}
+						]
+					},
+					{
+						'type': 'toolbox',
+						'children': [
+							{
+								'id': 'data-define-name',
+								'type': 'toolitem',
+								'text': _UNO('.uno:DefineName', 'spreadsheet'),
+								'command': '.uno:DefineName',
+								'accessibility': { focusBack: true,	combination: 'NN', de: null }
+							}
+						]
+					}
 				],
 				'vertical': 'true'
 			},

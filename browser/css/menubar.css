@@ -45,12 +45,69 @@
 	gap: 5px;
 	flex-direction: column;
 	width: fit-content;
+	flex: 1 1 auto;
 }
 
 .readonly .document-title {
 	justify-content: flex-end;
 }
 
+/* Add a class for the rotating effect */
+.rotate-icon {
+	animation: spin 2s linear infinite;
+}
+
+/* Keyframes for rotation */
+@keyframes spin {
+	from {
+		transform: rotate(0deg);
+	}
+
+	to {
+		transform: rotate(360deg);
+	}
+}
+#save {
+	display: flex;
+	font-size: var(--default-font-size);
+	font-family: var(--cool-font);
+	position: relative;
+	background: transparent;
+	line-height: 0;
+	height: 24px;
+	align-items: center;
+	justify-content: center;
+}
+
+#save.saving img {
+	background: url('images/lc_saving.svg') no-repeat center;
+}
+
+nav.hasnotebookbar #save::after {
+	position: absolute;
+	bottom: 0px;
+}
+
+nav.hasnotebookbar #save.saving::after {
+	content: var(--save-state);
+	font-size: var(--default-font-size);
+	font-family: var(--cool-font);
+	color: var(--color-main-text);
+}
+
+#save.saved img {
+	background: url('images/lc_saved.svg') no-repeat center;
+	filter: grayscale(0);
+}
+
+nav.hasnotebookbar #save.saved::after {
+	content: var(--save-state);
+	color: #309048;
+}
+
+[data-theme='dark'] #save.saving img {
+	background: url('images/dark/lc_saving.svg') no-repeat center;
+}
 #document-titlebar {
 	display: inline-table; /*new*/
 	table-layout: fixed;
@@ -72,6 +129,9 @@
 @media screen and (max-width: 900px) {
 	.main-nav.hasnotebookbar:not(.readonly) #document-titlebar {
 		display: none;
+	}
+	.notebookbar-tabs-container {
+		flex: 1 1 auto !important;
 	}
 }
 
@@ -105,6 +165,7 @@
 	background: var(--color-main-background);
 	padding: 0px;
 	overflow: scroll hidden;
+	padding-inline-start: 5px;
 }
 
 /* Customizations to sm-simple theme to make it look like LO menu, lo-menu class */

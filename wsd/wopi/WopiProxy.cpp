@@ -262,21 +262,27 @@ void WopiProxy::download(const std::shared_ptr<TerminatingPoll>& poll, const std
         (void)callDurationMs;
 
         // Note: we don't log the response if obfuscation is enabled, except for failures.
-        std::string wopiResponse = httpResponse->getBody();
         const bool failed = (httpResponse->statusLine().statusCode() != http::StatusCode::OK);
-
-        Log::Level level = failed ? Log::Level::ERR : Log::Level::TRC;
-        if (Log::isEnabled(level))
+        if (Log::isEnabled(failed ? Log::Level::ERR : Log::Level::TRC))
         {
-            std::ostringstream oss;
-            oss << "WOPI::GetFile " << (failed ? "failed" : "returned") << " for URI ["
-                   << uriAnonym << "]: " << httpResponse->statusLine().statusCode() << ' '
-                   << httpResponse->statusLine().reasonPhrase()
-                   << ". Headers: " << httpResponse->header()
-                   << (failed ? "\tBody: [" + wopiResponse + ']' : std::string());
+            const std::string& wopiResponse = httpResponse->getBody();
 
-            LOG_END_FLUSH(oss);
-            Log::log(level, oss.str());
+            std::ostringstream oss;
+            oss << "WOPI::GetFile " << (failed ? "failed" : "returned") << " for URI [" << uriAnonym
+                << "]: " << httpResponse->statusLine().statusCode() << ' '
+                << httpResponse->statusLine().reasonPhrase()
+                << ". Headers: " << httpResponse->header()
+                << (failed ? "\tBody: [" + COOLProtocol::getAbbreviatedMessage(wopiResponse) + ']'
+                           : std::string());
+
+            if (failed)
+            {
+                LOG_ERR(oss.str());
+            }
+            else
+            {
+                LOG_TRC(oss.str());
+            }
         }
 
         if (failed)

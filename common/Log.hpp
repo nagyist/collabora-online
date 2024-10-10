@@ -74,6 +74,8 @@ namespace Log
     /// Shutdown and release the logging system.
     void shutdown();
 
+    void flush();
+
     /// Cleanup state after forking
     void postFork();
 
@@ -185,14 +187,6 @@ static constexpr std::size_t skipPathPrefix(const char (&s)[N], std::size_t n = 
 #define LOG_END_NOFILE(LOG) (void)0
 
 #define LOG_END(LOG) LOG << "| " << LOG_FILE_NAME(__FILE__) << ":" STRING(__LINE__)
-
-/// Used to end multi-statement logging via Log::StreamLogger.
-#define LOG_END_FLUSH(LOG) \
-    do                     \
-    {                      \
-        LOG_END(LOG);      \
-        LOG.flush();       \
-    } while (false)
 
 #define LOG_MESSAGE_(LVL, A, X, PREFIX, SUFFIX)  \
     do                                          \

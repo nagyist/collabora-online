@@ -241,6 +241,7 @@ abstract class BaseNode {
 	protected sClassName = 'BaseNode';
 	public readonly eAnimationNodeType: AnimationNodeType;
 	protected bIsContainer: boolean;
+	protected bIsFirstAutoEffect: boolean = false;
 	protected readonly aNodeInfo: AnimationNodeInfo;
 	protected readonly aParentNode: BaseContainerNode;
 	protected readonly aNodeContext: NodeContext;
@@ -486,6 +487,9 @@ abstract class BaseNode {
 		if (aStateTrans.enter(NodeState.Active)) {
 			this.activate_st();
 			aStateTrans.commit();
+
+			if (this.bIsFirstAutoEffect)
+				this.aNodeContext.aContext.aSlideShowHandler.notifyFirstAutoEffectStarted();
 			if (!this.aContext.aEventMultiplexer)
 				window.app.console.log(
 					'BaseNode.activate: this.aContext.aEventMultiplexer is not valid',
@@ -515,6 +519,8 @@ abstract class BaseNode {
 				aStateTrans.commit();
 
 				this.notifyEndListeners();
+				if (this.bIsFirstAutoEffect)
+					this.aNodeContext.aContext.aSlideShowHandler.notifyFirstAutoEffectEnded();
 
 				if (this.aActivationEvent) this.aActivationEvent.dispose();
 				if (this.aDeactivationEvent) this.aDeactivationEvent.dispose();
@@ -547,6 +553,8 @@ abstract class BaseNode {
 			// if is FROZEN or is to be FROZEN, then
 			// will/already notified deactivating listeners
 			if (!bIsFrozenOrInTransitionToFrozen) this.notifyEndListeners();
+			if (this.bIsFirstAutoEffect)
+				this.aNodeContext.aContext.aSlideShowHandler.notifyFirstAutoEffectEnded();
 
 			if (this.aActivationEvent) this.aActivationEvent.dispose();
 			if (this.aDeactivationEvent) this.aDeactivationEvent.dispose();
@@ -677,15 +685,15 @@ abstract class BaseNode {
 		);
 	}
 
-	public getBegin(): any {
+	public getBegin(): Timing {
 		return this.aBegin;
 	}
 
-	public getEnd(): any {
+	public getEnd(): Timing {
 		return this.aEnd;
 	}
 
-	public getDuration(): any {
+	public getDuration(): Duration {
 		return this.aDuration;
 	}
 
@@ -714,17 +722,19 @@ abstract class BaseNode {
 	}
 
 	public info(bVerbose: boolean = false) {
-		let sInfo: string = 'class name: ' + this.sClassName;
-		sInfo += ';  node name: ' + this.aNodeInfo.nodeName;
-		sInfo += ';  id: ' + this.getId();
-		sInfo += ';  state: ' + NodeState[this.getState()];
+		let sInfo = `${this.sClassName}(${this.aNodeInfo.nodeName}, ${this.getId()}, ${NodeState[this.getState()]})`;
 
 		if (bVerbose) {
 			// is container
 			sInfo += ';  is container: ' + this.isContainer();
 
 			// begin
-			if (this.getBegin()) sInfo += ';  begin: ' + this.getBegin().info();
+			if (this.getBegin()) {
+				if (this.getBegin().getEventType() === EventTrigger.OnNext)
+					// on click starts the next effect
+					sInfo += ';  \x1B[31mbegin: ' + this.getBegin().info() + '\x1B[m';
+				else sInfo += ';  begin: ' + this.getBegin().info();
+			}
 
 			// duration
 			if (this.getDuration()) sInfo += ';  dur: ' + this.getDuration().info();
@@ -743,6 +753,14 @@ abstract class BaseNode {
 			// repeatCount
 			if (this.getRepeatCount() && this.getRepeatCount() != 1.0)
 				sInfo += ';  repeatCount: ' + this.getRepeatCount();
+
+			// preset id (effect type)
+			if (this.aNodeInfo.presetId)
+				sInfo += `; \x1B[31mpresetId: ${this.aNodeInfo.presetId}\x1B[m`;
+
+			// preset subType
+			if (this.aNodeInfo.presetSubType)
+				sInfo += `; presetSubType: ${this.aNodeInfo.presetSubType}`;
 
 			// accelerate
 			if (this.getAccelerateValue())

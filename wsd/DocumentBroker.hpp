@@ -104,10 +104,10 @@ public:
         {
             _urpFromKit = StreamSocket::create<StreamSocket>(
                 std::string(), urpFromKitFD, Socket::Type::Unix,
-                false, std::make_shared<UrpHandler>(this));
+                false, HostType::Other, std::make_shared<UrpHandler>(this));
             _urpToKit = StreamSocket::create<StreamSocket>(
                 std::string(), urpToKitFD, Socket::Type::Unix,
-                false, std::make_shared<UrpHandler>(this));
+                false, HostType::Other, std::make_shared<UrpHandler>(this));
         }
     }
 
@@ -363,6 +363,9 @@ public:
     /// Notify that the document has dialogs before load
     virtual void setInteractive(bool value);
 
+    /// Called when a new view is loaded.
+    void onViewLoaded(const std::shared_ptr<ClientSession>& session);
+
     /// If not yet locked, try to lock
     bool attemptLock(ClientSession& session, std::string& failReason);
 
@@ -613,6 +616,9 @@ private:
     /// Note that if there is no loaded and writable session, the first will be returned.
     std::shared_ptr<ClientSession> getWriteableSession() const;
 
+    /// Get the first session that has a valid authorization.
+    std::shared_ptr<ClientSession> getFirstAuthorizedSession() const;
+
     void refreshLock();
 
     /// Downloads the document ahead-of-time.
@@ -767,6 +773,12 @@ private:
 
     /// Handles the completion of uploading to storage, both success and failure cases.
     void handleUploadToStorageResponse(const StorageBase::UploadResult& uploadResult);
+
+    /// Handles the completion of successful uploading to storage.
+    void handleUploadToStorageSuccessful(const StorageBase::UploadResult& uploadResult);
+
+    /// Handles the completion of failed uploading to storage.
+    void handleUploadToStorageFailed(const StorageBase::UploadResult& uploadResult);
 
     /// Sends the .uno:Save command to LoKit.
     bool sendUnoSave(const std::shared_ptr<ClientSession>& session, bool dontTerminateEdit = true,
@@ -1287,6 +1299,8 @@ private:
     public:
         StorageManager(std::chrono::milliseconds minTimeBetweenUploads)
             : _request(minTimeBetweenUploads)
+            , _sizeOnServer(0)
+            , _sizeAsUploaded(0)
         {
             if (Log::traceEnabled())
             {
@@ -1346,6 +1360,20 @@ private:
         /// Returns the last modified time of the document.
         const std::string& getLastModifiedTime() const { return _lastModifiedTime; }
 
+        /// Set size of the document as we've downloaded it, or after a successful upload.
+        void setSizeOnServer(std::size_t size) { _sizeOnServer = size; }
+
+        /// Get size of the document as we've downloaded it, or after a successful upload.
+        std::size_t getSizeOnServer() const { return _sizeOnServer; }
+
+        /// Set size of the document as we've uploaded.
+        /// Used to resynchronize after an upload failure that break reliance on the LastModifiedTime.
+        void setSizeAsUploaded(std::size_t size) { _sizeAsUploaded = size; }
+
+        /// Get size of the document as we've set in our PutFile header.
+        /// Used to resynchronize after an upload failure that break reliance on the LastModifiedTime.
+        std::size_t getSizeAsUploaded() const { return _sizeAsUploaded; }
+
         /// Returns how long the last upload took.
         std::chrono::milliseconds lastUploadDuration() const
         {
@@ -1377,6 +1405,8 @@ private:
             os << indent << "last upload was successful: " << std::boolalpha
                << lastUploadSuccessful();
             os << indent << "upload failure count: " << uploadFailureCount();
+            os << indent << "size on server: " << _sizeOnServer;
+            os << indent << "last upload size: " << _sizeAsUploaded;
         }
 
     private:
@@ -1388,6 +1418,15 @@ private:
 
         /// The modified time of the document in storage, as reported by the server.
         std::string _lastModifiedTime;
+
+        /// The size of the document, as we downloaded from the server,
+        /// and after successfully uploading.
+        /// Used to help resynchronize the LastModifiedTime after an upload failure.
+        std::size_t _sizeOnServer;
+
+        /// The size of the document as we uploaded to the server.
+        /// Used to help resynchronize the LastModifiedTime after an upload failure.
+        std::size_t _sizeAsUploaded;
     };
 
     /// Represents a lock-state update request.
@@ -1605,6 +1644,9 @@ private:
     /// Performs aggregated work after servicing all client sessions
     void processBatchUpdates();
 
+    /// Called when document conflict is detected (i.e. it changed in storage).
+    void handleDocumentConflict();
+
     /// The main state of the document.
     DocumentState _docState;
 
@@ -1660,7 +1702,7 @@ private:
     int _cursorPosY;
     int _cursorWidth;
     int _cursorHeight;
-    std::unique_ptr<DocumentBrokerPoll> _poll;
+    std::shared_ptr<DocumentBrokerPoll> _poll;
     std::atomic<bool> _stop;
     std::string _closeReason;
     std::unique_ptr<LockContext> _lockCtx;

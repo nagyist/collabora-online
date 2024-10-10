@@ -81,6 +81,7 @@ class SlideShowHandler {
 	private automaticAdvanceTimeout: number | { rewindedEffect: number };
 	private enteringSlideTexture: WebGLTexture | ImageBitmap;
 	public isStarting: boolean;
+	private bIsFirstAutoEffectRunning: boolean = false;
 
 	constructor() {
 		this.aTimer = new ElapsedTime();
@@ -136,6 +137,10 @@ class SlideShowHandler {
 
 	setNavigator(slideShowNavigator: SlideShowNavigator) {
 		this.slideShowNavigator = slideShowNavigator;
+	}
+
+	isGlSupported(): boolean {
+		return !this.presenter._slideRenderer._context.is2dGl();
 	}
 
 	setSlideEvents(
@@ -355,8 +360,7 @@ class SlideShowHandler {
 		this.bIsTransitionRunning = false;
 		if (this.bIsRewinding) {
 			this.theMetaPres.getMetaSlideByIndex(nNewSlide).hide();
-			this.slideShowNavigator.displaySlide(nOldSlide, true);
-			this.skipAllEffects();
+			this.slideShowNavigator.rewindToPreviousSlide();
 			this.bIsRewinding = false;
 			return;
 		}
@@ -418,7 +422,7 @@ class SlideShowHandler {
 	 *  @return {Boolean}
 	 *      False if there is no more effect to start, true otherwise.
 	 */
-	nextEffect() {
+	nextEffect(): boolean {
 		if (!this.isEnabled()) return false;
 
 		if (this.isTransitionPlaying()) {
@@ -426,6 +430,14 @@ class SlideShowHandler {
 			return true;
 		}
 
+		if (this.isFirstAutoEffectRunning()) {
+			this.skipFirstAutoEffect();
+			return true;
+		}
+
+		ANIMDBG.print(
+			`SlideShowHandler.nextEffect: current effect: ${this.nCurrentEffect}`,
+		);
 		if (this.isAnyEffectPlaying()) {
 			this.skipAllPlayingEffects();
 			return true;
@@ -494,8 +506,11 @@ class SlideShowHandler {
 	 */
 	skipNextEffect(): boolean {
 		if (this.bIsSkipping || this.bIsRewinding) return true;
+		ANIMDBG.print(
+			`SlideShowHandler.skipNextEffect: current effect: ${this.nCurrentEffect}`,
+		);
 
-		assert(!this.isAnyEffectPlaying(), 'SlideShow.skipNextEffect');
+		assert(!this.isAnyEffectPlaying(), 'SlideShowHandler.skipNextEffect');
 
 		if (!this.aNextEffectEventArray) return false;
 
@@ -525,6 +540,11 @@ class SlideShowHandler {
 			return true;
 		}
 
+		if (this.isFirstAutoEffectRunning()) {
+			this.skipFirstAutoEffect();
+			return true;
+		}
+
 		if (this.isAnyEffectPlaying()) return this.skipAllPlayingEffects();
 		else return this.skipNextEffect();
 	}
@@ -544,6 +564,10 @@ class SlideShowHandler {
 
 		if (this.isTransitionPlaying()) {
 			this.skipTransition();
+		}
+
+		if (this.isFirstAutoEffectRunning()) {
+			this.skipFirstAutoEffect();
 		}
 
 		if (this.isAnyEffectPlaying()) {
@@ -680,14 +704,17 @@ class SlideShowHandler {
 	 */
 	rewindToPreviousSlide() {
 		NAVDBG.print('SlideShowHandler.rewindToPreviousSlide');
+		if (this.isFirstAutoEffectRunning()) {
+			this.rewindFirstAutoEffect();
+		}
+
 		if (this.isTransitionPlaying()) {
 			this.rewindTransition();
 			return;
 		}
 		if (this.isAnyEffectPlaying()) return;
 
-		this.slideShowNavigator.switchSlide(-1, true);
-		this.skipAllEffects();
+		this.slideShowNavigator.rewindToPreviousSlide();
 	}
 
 	/** rewindAllEffects
@@ -729,6 +756,8 @@ class SlideShowHandler {
 		}
 	}
 
+	// This method must be invoked by SlideShowNavigator.displaySlide only,
+	// since we need to update the current slide index.
 	displaySlide(
 		nNewSlide: number,
 		nOldSlide: number | undefined,
@@ -745,14 +774,12 @@ class SlideShowHandler {
 			this.exitSlideShow();
 		}
 
-		const aNewMetaSlide = aMetaDoc.getMetaSlideByIndex(nNewSlide);
-		if (aNewMetaSlide && aNewMetaSlide.hidden) {
-			NAVDBG.print('SlideShowHandler.displaySlide: slide hidden: ' + nNewSlide);
-			return false;
-		}
-
 		if (this.isTransitionPlaying()) {
 			this.skipTransition();
+		}
+
+		if (this.isFirstAutoEffectRunning()) {
+			this.skipFirstAutoEffect();
 		}
 
 		if (this.slideRenderer.isAnyVideoPlaying) {
@@ -772,6 +799,7 @@ class SlideShowHandler {
 				(nOldSlide === undefined && this.isStarting) ||
 				(nOldSlide !== undefined && nNewSlide > nOldSlide)
 			) {
+				const aNewMetaSlide = aMetaDoc.getMetaSlideByIndex(nNewSlide);
 				const aSlideTransitionHandler = aNewMetaSlide.transitionHandler;
 				if (aSlideTransitionHandler && aSlideTransitionHandler.isValid()) {
 					const aTransitionEndEvent = makeEvent(
@@ -793,7 +821,7 @@ class SlideShowHandler {
 							this.aActivityQueue.addActivity(aTransitionActivity);
 							this.update();
 							this.presenter.stopLoader();
-							return true;
+							return;
 						}
 					} catch (message) {
 						console.error('displaySlide failed: ' + message);
@@ -803,11 +831,11 @@ class SlideShowHandler {
 		}
 
 		this.notifyTransitionEnd(nNewSlide, nOldSlide);
-		return true;
 	}
 
 	exitSlideShow() {
 		// TODO: implement it;
+		this.automaticAdvanceTimeout = null;
 	}
 
 	update() {
@@ -854,6 +882,7 @@ class SlideShowHandler {
 		this.aActivityQueue.clear();
 		this.aNextEffectEventArray = null;
 		this.aEventMultiplexer = null;
+		this.automaticAdvanceTimeout = null;
 	}
 
 	getContext() {
@@ -911,8 +940,39 @@ class SlideShowHandler {
 		transitionParameters.context = this.slideRenderer._context;
 		transitionParameters.current = leavingSlideTexture;
 		transitionParameters.next = enteringSlideTexture;
-		transitionParameters.slideInfo = this.getSlideInfo(nNewSlide);
+		transitionParameters.transitionFilterInfo =
+			TransitionFilterInfo.fromSlideInfo(this.getSlideInfo(nNewSlide));
 
 		return transitionParameters;
+	}
+
+	public notifyFirstAutoEffectStarted() {
+		console.debug('SlideShowHandler.notifyFirstAutoEffectStarted');
+		this.bIsFirstAutoEffectRunning = true;
+	}
+
+	public notifyFirstAutoEffectEnded() {
+		console.debug('SlideShowHandler.notifyFirstAutoEffectEnded');
+		this.bIsFirstAutoEffectRunning = false;
+	}
+
+	public isFirstAutoEffectRunning() {
+		return this.bIsFirstAutoEffectRunning;
+	}
+
+	private skipFirstAutoEffect() {
+		console.debug('SlideShowHandler.skipFirstAutoEffect');
+		this.bIsSkipping = true;
+		this.aEventMultiplexer.notifySkipEffectEvent();
+		this.update();
+		this.bIsSkipping = false;
+		// empty body
+	}
+
+	private rewindFirstAutoEffect() {
+		this.bIsRewinding = true;
+		this.aEventMultiplexer.notifyRewindCurrentEffectEvent();
+		this.update();
+		this.bIsRewinding = false;
 	}
 }

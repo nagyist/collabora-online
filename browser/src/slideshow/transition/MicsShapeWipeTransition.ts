@@ -14,9 +14,8 @@ declare var SlideShow: any;
 
 function MicsShapeWipeTransition(transitionParameters: TransitionParameters) {
 	const transitionSubType =
-		stringToTransitionSubTypeMap[
-			transitionParameters.slideInfo.transitionSubtype
-		];
+		transitionParameters.transitionFilterInfo.transitionSubtype;
+
 	if (transitionSubType == TransitionSubType.CORNERSOUT) {
 		return SlideShow.CubeTransition(transitionParameters, true);
 	} else if (transitionSubType == TransitionSubType.LEFTTORIGHT) {
@@ -48,7 +47,7 @@ function MicsShapeWipeTransition(transitionParameters: TransitionParameters) {
 	} else if (transitionSubType == TransitionSubType.FANOUTHORIZONTAL) {
 		return SlideShow.makeHelixTransition(transitionParameters, 20);
 	} else if (transitionSubType == TransitionSubType.ACROSS) {
-		return SlideShow.FlipTilesTransition(transitionParameters, 8, 6);
+		return SlideShow.makeFlipTilesTransition(transitionParameters, 8, 6);
 	} else if (transitionSubType == TransitionSubType.DIAMOND) {
 		return new SlideShow.NoTransition(transitionParameters); //  todo: glitter transition
 	} else if (transitionSubType == TransitionSubType.HEART) {

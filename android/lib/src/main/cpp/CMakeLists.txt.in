@@ -39,7 +39,11 @@ add_library(androidapp SHARED
             ../../../../../wsd/TileCache.cpp
             ../../../../../wsd/coolwsd-fork.cpp)
 
-target_compile_definitions(androidapp PRIVATE COOLWSD_CONFIGDIR="/assets/etc/coolwsd")
+target_compile_definitions(androidapp PRIVATE
+                           COOLWSD_CONFIGDIR="/assets/etc/coolwsd"
+                           COOLWSD_LOGLEVEL="@COOLWSD_LOGLEVEL@"
+                           NUM_PRESPAWN_CHILDREN="@NUM_PRESPAWN_CHILDREN@"
+)
 
 # According to the ABI, we need to use different source trees
 if(${ANDROID_ABI} STREQUAL "armeabi-v7a")

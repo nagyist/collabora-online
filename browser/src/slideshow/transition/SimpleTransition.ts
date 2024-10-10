@@ -27,11 +27,17 @@ class SimpleTransition extends SlideShow.Transition3d {
 
 		this.textures = [transitionParameters.current, transitionParameters.next];
 
+		this.initWebglFlags();
+		this.prepareTransition();
+	}
+
+	public initWebglFlags(): void {
+		this.gl.disable(this.gl.DEPTH_TEST);
+		this.gl.disable(this.gl.CULL_FACE);
+
 		// Enable alpha blending
 		this.gl.enable(this.gl.BLEND);
 		this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
-
-		this.prepareTransition();
 	}
 
 	public initBuffers(): void {
