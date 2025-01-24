@@ -175,11 +175,11 @@ static LokHookFunction2* initFunction = nullptr;
 class BackgroundSaveWatchdog
 {
 public:
-    BackgroundSaveWatchdog(unsigned mobileAppDocId)
+    BackgroundSaveWatchdog(unsigned mobileAppDocId, int savingTid)
         : _saveCompleted(false)
         , _watchdogThread(
             // mobileAppDocId is on the stack, so capture it by value.
-              [mobileAppDocId, this]()
+              [mobileAppDocId, savingTid, this]()
               {
                   Util::setThreadName("kitbgsv_" + Util::encodeId(mobileAppDocId, 3) + "_wdg");
 
@@ -201,7 +201,7 @@ public:
                       LOG_WRN("BgSave timed out and will self-destroy");
                       Log::shutdown(); // Flush logs.
                       // raise(3) will exit the current thread, not the process.
-                      ::kill(0, SIGKILL); // kill(2) is trapped by seccomp.
+                      Util::killThreadById(savingTid, SIGABRT);
                   }
               })
     {
@@ -1375,6 +1375,16 @@ void Document::handleSaveMessage(const std::string &)
         if (_queue)
             _queue->clear();
 
+        // unregister the view callbacks
+        const int viewCount = getLOKitDocument()->getViewsCount();
+        std::vector<int> viewIds(viewCount);
+        getLOKitDocument()->getViewIds(viewIds.data(), viewCount);
+        for (const auto viewId : viewIds)
+        {
+            _loKitDocument->setView(viewId);
+            _loKitDocument->registerCallback(nullptr, nullptr);
+        }
+
         // cleanup any lingering file-system pieces
         _loKitDocument.reset();
 
@@ -1487,7 +1497,7 @@ bool Document::forkToSave(const std::function<void()> &childSave, int viewId)
         Util::sleepFromEnvIfSet("KitBackgroundSave", "SLEEPBACKGROUNDFORDEBUGGER");
 
         assert(!BgSaveWatchdog && "Unexpected to have BackgroundSaveWatchdog instance");
-        BgSaveWatchdog = std::make_unique<BackgroundSaveWatchdog>(_mobileAppDocId);
+        BgSaveWatchdog = std::make_unique<BackgroundSaveWatchdog>(_mobileAppDocId, Util::getThreadId());
 
         UnitKit::get().postBackgroundSaveFork();
 
@@ -2243,7 +2253,7 @@ float Document::getTilePriority(const std::chrono::steady_clock::time_point &now
     float maxPrio = std::numeric_limits<float>::min();
 
     assert(_sessions.size() > 0);
-    for (auto it : _sessions)
+    for (const auto& it : _sessions)
     {
         const std::shared_ptr<ChildSession> &session = it.second;
 
@@ -2255,7 +2265,7 @@ float Document::getTilePriority(const std::chrono::steady_clock::time_point &now
     }
     if (maxPrio == std::numeric_limits<float>::min())
         LOG_WRN("No sessions match this viewId " << desc.getNormalizedViewId());
-    LOG_TRC("Priority for tile " << desc.generateID() << " is " << maxPrio);
+    // LOG_TRC("Priority for tile " << desc.generateID() << " is " << maxPrio);
     return maxPrio;
 }
 
@@ -3080,12 +3090,14 @@ void copyCertificateDatabaseToTmp(Poco::Path const& jailPath)
 }
 
 #endif
+
 } // namespace
 
 void lokit_main(
 #if !MOBILEAPP
                 const std::string& childRoot,
                 const std::string& jailId,
+                const std::string& configId,
                 const std::string& sysTemplate,
                 const std::string& loTemplate,
                 bool noCapabilities,
@@ -3212,6 +3224,13 @@ void lokit_main(
             const std::string sharedTemplate = Poco::Path(tmpIncoming, "templates/presnt").toString();
             const std::string loJailDestImpressTemplatePath = Poco::Path(loJailDestPath, "share/template/common/presnt").toString();
 
+            const std::string sharedPresets = Poco::Path(childRoot, JailUtil::CHILDROOT_TMP_SHARED_PRESETS_PATH).toString();
+            const std::string sharedAutotext = Poco::Path(sharedPresets, "autotext").toString();
+            const std::string loJailDestAutotextPath = Poco::Path(loJailDestPath, "share/autotext/common").toString();
+
+            const std::string sharedWordbook = Poco::Path(sharedPresets, "wordbook").toString();
+            const std::string loJailDestWordbookPath = Poco::Path(loJailDestPath, "share/wordbook").toString();
+
             const std::string sysTemplateSubDir = Poco::Path(tempRoot, "systemplate-" + jailId).toString();
             const std::string jailEtcDir = Poco::Path(jailPath, "etc").toString();
 
@@ -3281,7 +3300,29 @@ void lokit_main(
                     return false;
                 }
 
-                // tmpdir inside the jail for added sercurity.
+                // mount the shared autotext over the lo shared autotext's 'common' dir
+                if (!JailUtil::bind(sharedAutotext, loJailDestAutotextPath)
+                    || !JailUtil::remountReadonly(sharedAutotext, loJailDestAutotextPath))
+                {
+                    // TODO: actually do this link on failure
+                    LOG_WRN("Failed to mount [" << sharedAutotext << "] -> ["
+                                                << loJailDestAutotextPath
+                                                << "], will link contents");
+                    return false;
+                }
+
+                // TODO: both autotext and wordbook needs to mounted can create a separate method to de-duplicate the code
+                // mount the shared wordbook over the lo shared wordbook
+                if (!JailUtil::bind(sharedWordbook, loJailDestWordbookPath)
+                    || !JailUtil::remountReadonly(sharedWordbook, loJailDestWordbookPath))
+                {
+                    // TODO: actually do this link on failure
+                    LOG_WRN("Failed to mount [" << sharedWordbook << "] -> [" << loJailDestWordbookPath
+                                                << "], will link contents");
+                    return false;
+                }
+
+                // tmpdir inside the jail for added security.
                 Poco::File(tmpSubDir).createDirectories();
                 LOG_INF("Mounting random temp dir " << tmpSubDir << " -> " << jailTmpDir);
                 if (!JailUtil::bind(tmpSubDir, jailTmpDir))
@@ -3547,6 +3588,11 @@ void lokit_main(
         std::string pathAndQuery(NEW_CHILD_URI);
         pathAndQuery.append("?jailid=");
         pathAndQuery.append(jailId);
+        if (!configId.empty())
+        {
+            pathAndQuery.append("&configid=");
+            pathAndQuery.append(configId);
+        }
         if (queryVersion)
         {
             char* versionInfo = loKit->getVersionInfo();

@@ -113,7 +113,7 @@ class Mention extends L.Control.AutoCompletePopup {
 			control.hideIfEmpty = true;
 			const data = this.getPopupJSON(control, { x: 0, y: 0 });
 			data.id = mobileCommentModalId;
-			(data.control as TreeWidget).entries = [];
+			(data.control as TreeWidgetJSON).entries = [];
 			this.sendUpdate(data);
 			return;
 		}
@@ -127,7 +127,9 @@ class Mention extends L.Control.AutoCompletePopup {
 			cursorPos = currentPos;
 			this.cursorPosAtStart = currentPos;
 		}
-
+		// popup mention should have total top margin of navigation bar + if toolbar present then toolbar height
+		var canvasEl = this.map._docLayer._canvas.getBoundingClientRect();
+		cursorPos.y += canvasEl.top;
 		if (entries.length === 0) {
 			// If the key pressed was a space, and there are no matches, then just
 			// dismiss the popup.
@@ -156,7 +158,7 @@ class Mention extends L.Control.AutoCompletePopup {
 		if (L.DomUtil.get(this.popupId + 'List')) {
 			const data = this.getPopupJSON(control, cursorPos);
 			if (isMobileCommentActive) data.id = mobileCommentModalId;
-			(data.control as TreeWidget).entries = entries;
+			(data.control as TreeWidgetJSON).entries = entries;
 			this.sendUpdate(data);
 			return;
 		}
@@ -164,7 +166,7 @@ class Mention extends L.Control.AutoCompletePopup {
 		if (L.DomUtil.get(this.popupId)) this.closeMentionPopup(true);
 		const data = this.newPopupData;
 		data.children[0].children[0] = control;
-		(data.children[0].children[0] as TreeWidget).entries = entries;
+		(data.children[0].children[0] as TreeWidgetJSON).entries = entries;
 		data.posx = cursorPos.x;
 		data.posy = cursorPos.y;
 		this.sendJSON(data);
@@ -202,7 +204,7 @@ class Mention extends L.Control.AutoCompletePopup {
 				control.hideIfEmpty = true;
 				const data = this.getPopupJSON(control, { x: 0, y: 0 });
 				data.id = mobileCommentModalId;
-				(data.control as TreeWidget).entries = [];
+				(data.control as TreeWidgetJSON).entries = [];
 				this.sendUpdate(data);
 			} else {
 				this.map.fire('closemobilewizard');

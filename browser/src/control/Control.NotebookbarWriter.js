@@ -1136,6 +1136,14 @@ L.Control.NotebookbarWriter = L.Control.Notebookbar.extend({
 				'command': 'hyperlinkdialog',
 				'accessibility': { focusBack: false,	combination: 'ZL',	de:	'8' }
 			},
+			(this._map['wopi'].EnableRemoteAIContent) ? {
+				'id': 'insert-insert-remote-ai-content',
+				'class': 'unoremoteaicontent',
+				'type': 'bigcustomtoolitem',
+				'text': _('Assistant'),
+				'command': 'remoteaicontent',
+				'accessibility': { focusBack: true, combination: 'RL', de: null }
+			} : {},
 			{
 				'id': 'insert-insert-annotation',
 				'type': 'bigtoolitem',
@@ -1960,7 +1968,7 @@ L.Control.NotebookbarWriter = L.Control.Notebookbar.extend({
 					'class': 'unozoteroaddeditbibliography',
 					'type': 'bigcustomtoolitem',
 					'text': _('Add Bibliography'),
-					'command': 'zoteroeditbibliography'
+					'command': 'zoteroaddeditbibliography'
 				},
 				{
 					'type': 'container',

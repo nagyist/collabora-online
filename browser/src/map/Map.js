@@ -794,7 +794,9 @@ L.Map = L.Evented.extend({
 		return this.panTo(newCenter, options);
 	},
 
-	invalidateSize: function (options) {
+	// If map size has already been updated, invalidateSize needs the oldSize to work properly
+	// (e.g. if getSize() has already been called whith _sizeChanged === true)
+	invalidateSize: function (options, oldSize) {
 		if (!this._loaded) { return this; }
 
 		options = L.extend({
@@ -802,7 +804,9 @@ L.Map = L.Evented.extend({
 			pan: false
 		}, options === true ? {animate: true} : options);
 
-		var oldSize = this.getSize();
+		if (!oldSize) {
+			oldSize = this.getSize();
+		}
 		this._sizeChanged = true;
 
 		var newSize = this.getSize(),
@@ -1052,6 +1056,15 @@ L.Map = L.Evented.extend({
 	unproject: function (point, zoom) { // (Point[, Number]) -> LatLng
 		zoom = zoom === undefined ? this.getZoom() : zoom;
 		return this.options.crs.pointToLatLng(L.point(point), zoom);
+	},
+
+	// rescaling
+
+	rescale: function(point, oldZoom, newZoom) {
+		oldZoom = oldZoom === undefined ? this.getZoom() : oldZoom;
+		newZoom = newZoom === undefined ? this.getZoom() : newZoom;
+
+		return this.options.crs.rescale(point, oldZoom, newZoom);
 	},
 
 	/**
@@ -1429,6 +1442,13 @@ L.Map = L.Evented.extend({
 		}
 
 		app.idleHandler._activate();
+
+		if (app.definitions.CommentSection.needFocus)
+		{
+			app.definitions.CommentSection.needFocus.focus();
+			app.sectionContainer.getSectionWithName(L.CSections.CommentList.name).select(app.needFocus)
+			app.definitions.CommentSection.needFocus = null;
+		}
 	},
 
 	// Event to change the focus to dialog or editor.

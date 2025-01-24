@@ -10,39 +10,16 @@
  */
 /*
  * Ruler Handler
+
+ * HRuler.ts
+/**
+ * VRuler.ts
+ * 
+ * Manages the vertical ruler for displaying measurements and positioning. 
+ * Handles user interactions like scrolling and renders grid lines/ticks.
  */
 
-/* global L _ */
-
-interface Params {
-	[key: string]: {
-		type: string;
-		value: any;
-	};
-}
-
-interface Options {
-	interactive: boolean;
-	marginSet: boolean;
-	displayNumber: boolean;
-	tileMargin: number;
-	margin1: number | null;
-	margin2: number | null;
-	leftOffset: number | null;
-	pageOffset: number | null;
-	pageWidth: number | null;
-	pageTopMargin: number | null;
-	pageBottomMargin: number | null;
-	tabs: any[];
-	unit: string | null;
-	DraggableConvertRatio: number | null;
-	timer: ReturnType<typeof setTimeout>;
-	showruler: boolean;
-	position: string;
-	disableMarker: boolean;
-}
-
-class VRuler {
+class VRuler extends Ruler {
 	_pVerticalStartMarker: HTMLDivElement;
 	_pVerticalEndMarker: HTMLDivElement;
 	_rFace: HTMLDivElement;
@@ -60,33 +37,15 @@ class VRuler {
 	_indentationElementId: string;
 	_initialposition: number;
 	_lastposition: number;
+
 	_map: ReturnType<typeof L.map>;
+	options: Options;
 
-	options: Options = {
-		interactive: true,
-		marginSet: false,
-		displayNumber: true,
-		tileMargin: 20, // No idea what this means and where it comes from
-		margin1: null,
-		margin2: null,
-		leftOffset: null,
-		pageOffset: null,
-		pageWidth: null,
-		pageTopMargin: null,
-		pageBottomMargin: null,
-		tabs: [],
-		unit: null,
-		DraggableConvertRatio: null,
-		timer: null,
-		showruler: true,
-		position: 'topleft',
-		disableMarker: false,
-	};
-
-	constructor(map: ReturnType<typeof L.map>, options: Options) {
-		this._map = map;
+	constructor(map: ReturnType<typeof L.map>, options: Partial<Options>) {
+		super(options);
 		Object.assign(this.options, options);
-		this.onAdd();
+		this._map = map;
+		this.onAdd(); // VRuler created
 	}
 
 	onAdd() {
@@ -116,19 +75,10 @@ class VRuler {
 		}
 	}
 
-	_updatePaintTimer() {
-		clearTimeout(this.options.timer);
-		this.options.timer = setTimeout(L.bind(this._updateBreakPoints, this), 300);
-	}
-
 	_resetTopBottomPageSpacing(e?: any) {
 		this.options.pageTopMargin = undefined;
 		this.options.pageBottomMargin = undefined;
 		if (e) this.options.disableMarker = e.disableMarker;
-	}
-
-	getWindowProperty<T>(propertyName: string): T | undefined {
-		return (window as any)[propertyName];
 	}
 
 	onCommandStateChanged(e: any) {
@@ -425,28 +375,6 @@ class VRuler {
 		// in case of disabled ruler at docload or event like 'moveend' calculation of offset can be ignored
 		if (!this._map.options.docBounds || !this.options.showruler) return;
 
-		const scale: number = this._map.getZoomScale(this._map.getZoom(), 10);
-		const mapPane = this._map._mapPane;
-		const topLeft = this._map.latLngToLayerPoint(
-			this._map.options.docBounds.getNorthWest(),
-		);
-		const firstTileXTranslate = topLeft.y;
-
-		let mapPaneYTranslate: number = 0;
-
-		// Extract the transform property directly from the mapPane style
-		const transformValue = mapPane.style.transform;
-
-		// Check if the transformValue exists and contains 'translate3d'
-		if (transformValue && transformValue.startsWith('translate3d')) {
-			// Split the transformValue string by commas and get the Y value
-			const transformArray = transformValue.split(',');
-			if (transformArray.length >= 2) {
-				// The Y value is the second item in the 'translate3d' format
-				mapPaneYTranslate = parseFloat(transformArray[1].trim());
-			}
-		}
-
 		// we need to also consider  if there is more then 1 page then pageoffset is crucial to consider
 		// i have calculated current page using pageoffset and pageWidth coming from CORE
 		// based on that calculate the page offset
@@ -462,10 +390,9 @@ class VRuler {
 				(this._map._docLayer._docPixelSize.y / this._map._docLayer._pages);
 
 		const rulerOffset: number =
-			mapPaneYTranslate +
-			firstTileXTranslate +
-			pageoffset +
-			this.options.tileMargin * scale;
+			-app.file.viewedRectangle.cY1 +
+			this.options.tileMargin * app.getScale() +
+			pageoffset;
 
 		this._rFace.style.marginInlineStart = rulerOffset + 'px';
 
@@ -596,7 +523,3 @@ class VRuler {
 		this._markerHorizontalLine.style.left = this._lastposition + 'px';
 	}
 }
-
-L.control.vruler = function (map: ReturnType<typeof L.map>, options: any) {
-	return new VRuler(map, options);
-};

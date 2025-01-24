@@ -476,11 +476,11 @@ L.Control.UIManager = L.Control.extend({
 		if ((window.mode.isTablet() || window.mode.isDesktop()) && !app.isReadOnly()) {
 			var showRuler = this.getBooleanDocTypePref('ShowRuler');
 			var interactiveRuler = this.map.isEditMode();
-			var isRTL = document.documentElement.dir === 'rtl';
-			L.control.ruler({position: (isRTL ? 'topright' : 'topleft'), interactive:interactiveRuler, showruler: showRuler}).addTo(this.map);
-			if (!this.map.isPresentationOrDrawing())
-				L.control.vruler(this.map, {position: (isRTL ? 'topright' : 'topleft'), interactive:interactiveRuler, showruler: showRuler});
-			this.map.fire('rulerchanged');
+			// Call the static method from the Ruler class
+			app.definitions.ruler.initializeRuler(this.map, {
+				interactive: interactiveRuler,
+				showruler: showRuler
+			});
 		}
 	},
 
@@ -1171,40 +1171,6 @@ L.Control.UIManager = L.Control.extend({
 			elem.tooltip('close');
 			elem.tooltip('disable');
 		}, {once: true});
-	},
-
-	// Calc function tooltip
-
-	/// Shows tooltip over the cell while typing a function in a cell.
-	/// tooltipInfo contains possible function list. If you type a valid
-	/// function it'll show the usage of the function.
-	showFormulaTooltip: function(tooltipInfo, pos) {
-		var elem = $('.leaflet-layer');
-		var pt = this.map.latLngToContainerPoint(pos);
-		pt.y -=35; //Show tooltip above the cursor.
-
-		if ($('.ui-tooltip').length > 0) {
-			this._setTooltipText(elem, tooltipInfo);
-		}
-		else {
-			elem.tooltip({
-				tooltipClass: 'functiontooltip',
-				content: tooltipInfo,
-				items: elem[0],
-				position: { my: 'left top', at: 'left+' + pt.x +  ' top+' +pt.y, collision: 'fit fit' }
-			});
-			elem.tooltip('option', 'customClass', 'functiontooltip');
-			elem.tooltip('open');
-			elem.off('mouseleave');
-		}
-	},
-
-	hideFormulaTooltip: function() {
-		var elem = $('.leaflet-layer');
-		if ($('.ui-tooltip').length > 0) {
-			elem.tooltip();
-			elem.tooltip('option', 'disabled', true);
-		}
 	},
 
 	// Snack bar

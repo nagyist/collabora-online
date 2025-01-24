@@ -959,6 +959,8 @@ public:
     void saveBodyToFile(const std::string& path)
     {
         _bodyFile.open(path, std::ios_base::out | std::ios_base::binary);
+        if (!_bodyFile.good())
+            LOG_ERR("Unable to open [" << path << "] for saveBodyToFile");
         _onBodyWriteCb = [this](const char* p, int64_t len)
         {
             LOG_TRC("Writing " << len << " bytes");
@@ -1116,6 +1118,7 @@ private:
         , _handshakeSslVerifyFailure(0)
         , _timeout(getDefaultTimeout())
         , _connected(false)
+        , _result(net::AsyncConnectResult::Ok)
     {
         assert(!_host.empty() && portNumber > 0 && !_port.empty() &&
                "Invalid hostname and portNumber for http::Sesssion");
@@ -1178,7 +1181,7 @@ public:
         const bool secure = (scheme == "https://" || scheme == "wss://");
         const auto protocol = secure ? Protocol::HttpSsl : Protocol::HttpUnencrypted;
         if (portString.empty())
-            return create(hostname, protocol, getDefaultPort(protocol));
+            return create(std::move(hostname), protocol, getDefaultPort(protocol));
 
         const std::pair<std::int32_t, bool> portPair = Util::i32FromString(portString);
         if (portPair.second && portPair.first > 0)
@@ -1902,10 +1905,10 @@ public:
     bool asyncUpload(std::string fromFile, std::string mimeType, std::string rangeHeader)
     {
         size_t equalsPos = rangeHeader.find("=");
-        if (equalsPos == std::string::npos) return asyncUpload(fromFile, mimeType);
+        if (equalsPos == std::string::npos) return asyncUpload(std::move(fromFile), std::move(mimeType));
 
         std::string unit = rangeHeader.substr(0, equalsPos);
-        if (unit != "bytes") return asyncUpload(fromFile, mimeType);
+        if (unit != "bytes") return asyncUpload(std::move(fromFile), std::move(mimeType));
 
         std::string range = rangeHeader.substr(equalsPos + 1);
 

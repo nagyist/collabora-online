@@ -146,26 +146,27 @@ class URLPopUpSection extends HTMLObjectSection {
 	}
 
 	public static resetPosition(section: URLPopUpSection) {
-		if (!section)
-			section = app.sectionContainer.getSectionWithName(URLPopUpSection.sectionName);
+		if (!section) section = app.sectionContainer.getSectionWithName(URLPopUpSection.sectionName);
+		if (!section) return;
 
-		let left = section.sectionProperties.documentPosition.pX - section.getPopUpWidth() * 0.5 * app.dpiScale;
-		let top = section.sectionProperties.documentPosition.pY - (section.getPopUpHeight() + URLPopUpSection.popupVerticalMargin) * app.dpiScale;
+		let originalLeft = section.sectionProperties.documentPosition.pX - section.getPopUpWidth() * 0.5 * app.dpiScale;
+		let originalTop = section.sectionProperties.documentPosition.pY - (section.getPopUpHeight() + URLPopUpSection.popupVerticalMargin) * app.dpiScale;
 
-		if (section) {
-			let arrowAtTop = false;
-			if (top < 0) {
-				top = section.sectionProperties.documentPosition.pY + (URLPopUpSection.popupVerticalMargin * 2 * app.dpiScale);
-				arrowAtTop = true;
-			}
+		const checkLeft = originalLeft - section.containerObject.getDocumentTopLeft()[0];
+		const checkTop = originalTop - section.containerObject.getDocumentTopLeft()[1];
 
-			if (left < 0) left = 0;
-
-			section.setPosition(left, top);
-			section.adjustHTMLObjectPosition();
-			section.reLocateArrow(arrowAtTop);
-			section.containerObject.requestReDraw();
+		let arrowAtTop = false;
+		if (checkTop < 0) {
+			originalTop = section.sectionProperties.documentPosition.pY + (URLPopUpSection.popupVerticalMargin * 2 * app.dpiScale);
+			arrowAtTop = true;
 		}
+
+		if (checkLeft < 0) originalLeft = section.documentTopLeft[0];
+
+		section.setPosition(originalLeft, originalTop);
+		section.adjustHTMLObjectPosition();
+		section.reLocateArrow(arrowAtTop);
+		section.containerObject.requestReDraw();
 	}
 
 	public static showURLPopUP(url: string, documentPosition: cool.SimplePoint, linkPosition?: cool.SimplePoint) {

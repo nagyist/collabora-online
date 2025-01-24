@@ -51,7 +51,7 @@ static const std::map<std::string, std::string> specialAttribute {
 static std::vector<std::string> netPostAllow, netPostAllowDesc, wopiHost, wopiHostDesc, wopiHostAllow;
 static bool netPostAllowAdded, wopiHostAdded;
 
-void MigrateLevel(const XMLConfiguration &sourceConfig, XMLConfiguration &targetConfig, const std::string sourceLevel)
+void MigrateLevel(const XMLConfiguration &sourceConfig, XMLConfiguration &targetConfig, const std::string& sourceLevel)
 {
     Poco::Util::AbstractConfiguration::Keys subKeys;
     sourceConfig.keys(sourceLevel, subKeys);
@@ -108,12 +108,12 @@ void MigrateLevel(const XMLConfiguration &sourceConfig, XMLConfiguration &target
                 // Keep record of these configs for post processing
                 if (commonKeyPart == NET_POST_ALLOW_HOST)
                 {
-                    netPostAllow.push_back(sourceElement);
+                    netPostAllow.push_back(std::move(sourceElement));
                     netPostAllowDesc.push_back(sourceConfig.getString(sourceLevel + "[@desc]"));
                 }
                 else if (commonKeyPart == STORAGE_WOPI_HOST)
                 {
-                    wopiHost.push_back(sourceElement);
+                    wopiHost.push_back(std::move(sourceElement));
                     wopiHostDesc.push_back(sourceConfig.getString(sourceLevel + "[@desc]"));
                     wopiHostAllow.push_back(sourceConfig.getString(sourceLevel + "[@allow]"));
                 }

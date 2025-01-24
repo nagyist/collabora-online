@@ -13,7 +13,7 @@
  * L.Control.NotebookbarCalc - definition of notebookbar content in Calc
  */
 
-/* global _ _UNO */
+/* global _ _UNO app */
 L.Control.NotebookbarCalc = L.Control.NotebookbarWriter.extend({
 
 	getTabs: function() {
@@ -1386,6 +1386,14 @@ L.Control.NotebookbarCalc = L.Control.NotebookbarWriter.extend({
 				'command': 'remotelink',
 				'accessibility': { focusBack: true,	combination: 'LR', de: null }
 			} : {},
+			(this._map['wopi'].EnableRemoteAIContent) ? {
+				'id': 'insert-insert-remote-ai-content',
+				'class': 'unoremoteaicontent',
+				'type': 'bigcustomtoolitem',
+				'text': _('Assistant'),
+				'command': 'remoteaicontent',
+				'accessibility': { focusBack: true, combination: 'RL', de: null }
+			} : {},
             {
                 'type': 'container',
                 'children': [
@@ -2010,6 +2018,13 @@ L.Control.NotebookbarCalc = L.Control.NotebookbarWriter.extend({
 				'command': '.uno:ParagraphDialog',
 				'accessibility': { focusBack: true,	combination: 'PD', de: null }
 			},
+			app.isExperimentalMode() ? {
+				'id': 'format-style-dialog',
+				'type': 'bigtoolitem',
+				'text': _('Style list'),
+				'command': '.uno:SidebarDeck.StyleListDeck',
+				'accessibility': { focusBack: false, combination: 'SD', de: null }
+			} : {},
 			{
 				'id': 'format-page-format-dialog',
 				'type': 'bigtoolitem',
