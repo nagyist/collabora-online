@@ -47,6 +47,7 @@
 #include "ProxyProtocol.hpp"
 #include "Util.hpp"
 #include "QuarantineUtil.hpp"
+#include <common/JailUtil.hpp>
 #include <common/JsonUtil.hpp>
 #include <common/Log.hpp>
 #include <common/Message.hpp>
@@ -56,10 +57,12 @@
 #include <common/FileUtil.hpp>
 #include <common/Uri.hpp>
 #include <CommandControl.hpp>
+#include <wsd/CacheUtil.hpp>
 #include <wsd/Process.hpp>
 
 #if !MOBILEAPP
 #include <wopi/CheckFileInfo.hpp>
+#include <wopi/StorageConnectionManager.hpp>
 #include <net/HttpHelper.hpp>
 #endif
 #include <sys/types.h>
@@ -158,7 +161,8 @@ public:
 std::atomic<unsigned> DocumentBroker::DocBrokerId(1);
 
 DocumentBroker::DocumentBroker(ChildType type, const std::string& uri, const Poco::URI& uriPublic,
-                               const std::string& docKey, unsigned mobileAppDocId,
+                               const std::string& docKey, const std::string& configId,
+                               unsigned mobileAppDocId,
                                std::unique_ptr<WopiStorage::WOPIFileInfo> wopiFileInfo)
     : _limitLifeSeconds(std::chrono::seconds::zero())
     , _uriOrig(uri)
@@ -193,6 +197,7 @@ DocumentBroker::DocumentBroker(ChildType type, const std::string& uri, const Poc
     , _debugRenderedTileCount(0)
     , _loadDuration(0)
     , _wopiDownloadDuration(0)
+    , _configId(configId)
     , _mobileAppDocId(mobileAppDocId)
     , _alwaysSaveOnExit(ConfigUtil::getConfigValue<bool>("per_document.always_save_on_exit", false))
     , _backgroundAutoSave(
@@ -274,13 +279,13 @@ void DocumentBroker::pollThread()
 {
     _threadStart = std::chrono::steady_clock::now();
 
-    LOG_INF("Starting docBroker polling thread for docKey [" << _docKey << ']');
+    LOG_INF("Starting docBroker polling thread for docKey [" << _docKey << ']' << " and configId [" << _configId << ']');
 
     // Request a kit process for this doc.
     do
     {
         static constexpr std::chrono::milliseconds timeoutMs(COMMAND_TIMEOUT_MS * 5);
-        _childProcess = getNewChild_Blocks(*_poll, _mobileAppDocId);
+        _childProcess = getNewChild_Blocks(*_poll, _configId, _mobileAppDocId);
         if (_childProcess
             || std::chrono::duration_cast<std::chrono::milliseconds>(
                    std::chrono::steady_clock::now() - _threadStart)
@@ -571,7 +576,7 @@ void DocumentBroker::pollThread()
                         LOG_ERR(
                             "Failed to store the document and reached maximum retry count of "
                             << limStoreFailures
-                            << "Save failures: " << _saveManager.saveFailureCount()
+                            << " Save failures: " << _saveManager.saveFailureCount()
                             << ", Upload failures: " << _storageManager.uploadFailureCount()
 #if !MOBILEAPP
                             << ". Giving up"
@@ -1014,6 +1019,8 @@ bool DocumentBroker::download(
     // Call the storage specific fileinfo functions
     std::string templateSource;
 
+    std::string userSettingsUri;
+
 #if !MOBILEAPP
     std::chrono::milliseconds checkFileInfoCallDurationMs = std::chrono::milliseconds::zero();
     WopiStorage* wopiStorage = dynamic_cast<WopiStorage*>(_storage.get());
@@ -1044,6 +1051,7 @@ bool DocumentBroker::download(
 
         if (session)
         {
+            userSettingsUri = wopiFileInfo->getUserSettingsUri();
             templateSource =
                 updateSessionWithWopiInfo(session, wopiStorage, std::move(wopiFileInfo));
         }
@@ -1165,6 +1173,27 @@ bool DocumentBroker::download(
             session->sendTextFrame(msg);
         }
     }
+
+    // if async browsersetting json request is not downloaded even after document download is complete
+    // we do sync request to make sure the browser setting json sent before document starts to load
+    if (session && !userSettingsUri.empty())
+    {
+        LOG_DBG("browsersetting for docKey ["
+                << _docKey << "] for session #" << session->getId()
+                << (session->getSentBrowserSetting() ? " already exists" : " is missing"));
+        if (!session->getSentBrowserSetting())
+        {
+            getBrowserSettingSync(session, userSettingsUri);
+            if (!session->getSentBrowserSetting())
+            {
+                const std::string uriAnonym = COOLWSD::anonymizeUrl(userSettingsUri);
+                LOG_ERR("Request to uri["
+                        << uriAnonym
+                        << "] failed or timedout while adding session #" + session->getId());
+            }
+        }
+    }
+
 #endif
     return true;
 }
@@ -1306,7 +1335,16 @@ DocumentBroker::updateSessionWithWopiInfo(const std::shared_ptr<ClientSession>& 
     // but this is more readily comprehensible and easier to reason about.
     session->setWritePermission(wopiFileInfo->getUserCanWrite());
 
-    if (!wopiFileInfo->getUserCanWrite())
+    if (wopiFileInfo->getUserCanOnlyComment())
+    {
+        LOG_DBG("Setting session ["
+                << sessionId << "] to readonly for UserCanOnlyComment=true and allowing comments");
+        session->setWritePermission(true);
+        session->setWritable(true);
+        session->setReadOnly(true);
+        session->setAllowChangeComments(true);
+    }
+    else if (!wopiFileInfo->getUserCanWrite())
     {
         // We can't write in the storage, so we can't even add comments.
         LOG_DBG("Setting session [" << sessionId << "] to readonly for UserCanWrite=false");
@@ -1388,6 +1426,7 @@ DocumentBroker::updateSessionWithWopiInfo(const std::shared_ptr<ClientSession>& 
     wopiInfo->set("EnableInsertRemoteFile", wopiFileInfo->getEnableInsertRemoteFile());
     wopiInfo->set("DisableInsertLocalImage", wopiFileInfo->getDisableInsertLocalImage());
     wopiInfo->set("EnableRemoteLinkPicker", wopiFileInfo->getEnableRemoteLinkPicker());
+    wopiInfo->set("EnableRemoteAIContent", wopiFileInfo->getEnableRemoteAIContent());
     wopiInfo->set("EnableShare", wopiFileInfo->getEnableShare());
     wopiInfo->set("HideUserList", wopiFileInfo->getHideUserList());
     wopiInfo->set("SupportsRename", wopiFileInfo->getSupportsRename());
@@ -1435,6 +1474,16 @@ DocumentBroker::updateSessionWithWopiInfo(const std::shared_ptr<ClientSession>& 
         _serverAudit.disable();
     }
 
+    std::string userSettingsUri = wopiFileInfo->getUserSettingsUri();
+    if (_sessions.empty() && !userSettingsUri.empty())
+    {
+        std::string jailPresetsPath = FileUtil::buildLocalPathToJail(COOLWSD::EnableMountNamespaces,
+                                                                     getJailRoot(),
+                                                                     JAILED_CONFIG_ROOT);
+        std::string configId = "user-" + userId + "-" + Cache::getConfigId(userSettingsUri);
+        asyncInstallPresets(session, configId, userSettingsUri, jailPresetsPath);
+    }
+
     // Pass the ownership to the client session.
     session->setWopiFileInfo(std::move(wopiFileInfo));
     session->setUserId(userId);
@@ -1446,6 +1495,436 @@ DocumentBroker::updateSessionWithWopiInfo(const std::shared_ptr<ClientSession>& 
     session->setWatermarkText(watermarkText);
 
     return templateSource;
+}
+
+class PresetsInstallTask
+{
+private:
+    SocketPoll& _poll;
+    bool _reportedStatus;
+    bool _overallSuccess;
+    int _idCount;
+    std::string _configId;
+    std::string _presetsPath;
+    std::set<std::string> _installingPresets;
+    std::vector<std::function<void(bool)>> _installFinishedCBs;
+
+    void asyncInstall(const std::string& uri, const std::string& stamp, const std::string& fileName,
+                      const std::shared_ptr<ClientSession>& session)
+    {
+        auto presetInstallFinished = [this](const std::string& id, bool presetResult)
+        {
+            installPresetFinished(id, presetResult);
+        };
+
+        // just something unique for this resource
+        std::string id = std::to_string(_idCount++);
+
+        installPresetStarted(id);
+
+        DocumentBroker::asyncInstallPreset(_poll, _configId, uri, stamp, fileName, id,
+                                           presetInstallFinished, session);
+    }
+
+    void installPresetStarted(const std::string& id)
+    {
+        _installingPresets.insert(id);
+    }
+
+    void installPresetFinished(const std::string& id, bool presetResult)
+    {
+        _overallSuccess &= presetResult;
+        _installingPresets.erase(id);
+        // If there are no remaining presets to fetch, or this one has
+        // failed, then we can respond. TODO could we cancel outstanding
+        // downloads?
+        if (_installingPresets.empty() && !_reportedStatus)
+        {
+            LOG_INF("Async fetch of presets for " << _configId << " completed. Success: " << _overallSuccess);
+            completed();
+        }
+    }
+
+    void completed()
+    {
+        _reportedStatus = true;
+        for (const auto& cb : _installFinishedCBs)
+            cb(_overallSuccess);
+    }
+
+    void addGroup(Poco::JSON::Object::Ptr settings, const std::string& groupName,
+                  std::vector<CacheQuery>& queries)
+    {
+        if (!settings->has(groupName))
+            return;
+
+        auto group = settings->get(groupName).extract<Poco::JSON::Array::Ptr>();
+        for (std::size_t i = 0, count = group->size(); i < count; ++i)
+        {
+            auto elem = group->get(i).extract<Poco::JSON::Object::Ptr>();
+            if (!elem)
+                continue;
+
+            const std::string uri = JsonUtil::getJSONValue<std::string>(elem, "uri");
+            const std::string stamp = JsonUtil::getJSONValue<std::string>(elem, "stamp");
+
+            Poco::Path destDir(_presetsPath, groupName);
+            Poco::File(destDir).createDirectories();
+            std::string fileName;
+            if (groupName == "xcu")
+                fileName = Poco::Path(destDir.toString(), "config.xcu").toString();
+            else if (groupName == "browsersetting")
+                fileName = Poco::Path(destDir.toString(), "browsersetting.json").toString();
+            else
+                fileName = Poco::Path(destDir.toString(), Uri::getFilenameWithExtFromURL(uri)).toString();
+
+            queries.emplace_back(uri, stamp, fileName);
+        }
+    }
+
+public:
+    PresetsInstallTask(SocketPoll& poll, const std::string& configId,
+                       const std::string& presetsPath,
+                       const std::function<void(bool)>& installFinishedCB)
+        : _poll(poll)
+        , _reportedStatus(false)
+        , _overallSuccess(true)
+        , _idCount(0)
+        , _configId(configId)
+        , _presetsPath(presetsPath)
+    {
+        appendCallback(installFinishedCB);
+    }
+
+    bool empty() const
+    {
+        return _installingPresets.empty();
+    }
+
+    void appendCallback(const std::function<void(bool)>& installFinishedCB)
+    {
+        _installFinishedCBs.emplace_back(installFinishedCB);
+    }
+
+    void install(const Poco::JSON::Object::Ptr& settings,
+                 const std::shared_ptr<ClientSession>& session)
+    {
+        std::vector<CacheQuery> presets;
+        if (!settings)
+            _overallSuccess = false;
+        else
+        {
+            addGroup(settings, "browsersetting", presets);
+            addGroup(settings, "autotext", presets);
+            addGroup(settings, "wordbook", presets);
+            addGroup(settings, "xcu", presets);
+        }
+
+        Cache::supplyConfigFiles(_configId, presets);
+
+        // If there are no presets to fetch then we can respond now, otherwise
+        // that happens when the last preset is installed.
+        if (!presets.empty())
+        {
+            LOG_INF("Async fetch of presets for " << _configId << " launched");
+            for (const auto& preset : presets)
+                asyncInstall(preset._uri, preset._stamp, preset._dest, session);
+        }
+        else
+        {
+            LOG_INF("Fetch of presets for " << _configId << " completed immediately. Success: " << _overallSuccess);
+            completed();
+        }
+    }
+};
+
+void DocumentBroker::asyncInstallPresets(const std::shared_ptr<ClientSession>& session,
+                                         const std::string& configId,
+                                         const std::string& userSettingsUri,
+                                         const std::string& presetsPath)
+{
+    auto installFinishedCB =
+        [selfWeak = weak_from_this(), this, session, userSettingsUri, presetsPath](bool success)
+    {
+        std::shared_ptr<DocumentBroker> selfLifecycle = selfWeak.lock();
+        if (!selfLifecycle)
+            return;
+
+        if (success)
+        {
+            std::string searchDir = presetsPath;
+            searchDir.append("wordbook");
+            const auto fileNames = FileUtil::getDirEntries(searchDir);
+            std::error_code ec;
+            for (const auto& fileName : fileNames)
+            {
+                std::string filePath = searchDir;
+                filePath.append("/");
+                filePath.append(fileName);
+                std::filesystem::file_time_type ts = std::filesystem::last_write_time(filePath, ec);
+                if (ec)
+                {
+                    LOG_ERR("File[" << fileName << "] doesn't exist");
+                    continue;
+                }
+                _presetTimestamp[fileName] = ts;
+            }
+            forwardToChild(session, "addconfig");
+        }
+        else
+        {
+            const std::string uriAnonym = COOLWSD::anonymizeUrl(userSettingsUri);
+            LOG_ERR("Failed to load all settings from [" << uriAnonym << ']');
+            stop("configfailed");
+        }
+    };
+    _asyncInstallTask = asyncInstallPresets(*_poll, configId, userSettingsUri,
+                                            presetsPath, session, installFinishedCB);
+    _asyncInstallTask->appendCallback([selfWeak = weak_from_this(), this](bool){
+        std::shared_ptr<DocumentBroker> selfLifecycle = selfWeak.lock();
+        if (!selfLifecycle)
+            return;
+
+        _asyncInstallTask.reset();
+    });
+}
+
+std::shared_ptr<const http::Response>
+DocumentBroker::sendHttpSyncRequest(const std::string& url, const std::string& logContext)
+{
+    const Poco::URI uri{ url };
+    std::shared_ptr<http::Session> httpSession(StorageConnectionManager::getHttpSession(uri));
+    http::Request request(uri.getPathAndQuery());
+
+    const std::string uriAnonym = COOLWSD::anonymizeUrl(url);
+    LOG_DBG("Getting " << logContext << " from [" << uriAnonym << "] using sync request");
+    std::shared_ptr<const http::Response> httpResponse = httpSession->syncRequest(request);
+    const http::StatusLine statusLine = httpResponse->statusLine();
+
+    LOG_TRC("sendHttpSyncRequest returned " << statusLine.statusCode() << " when fetching "
+                                            << logContext << " json");
+
+    if (statusLine.statusCode() != http::StatusCode::OK)
+    {
+        LOG_ERR("Failed to get " << logContext << " json from [" << uriAnonym << "] with status["
+                                 << statusLine.reasonPhrase() << ']');
+        return nullptr;
+    }
+
+    return httpResponse;
+}
+
+void DocumentBroker::sendBrowserSetting(const std::shared_ptr<ClientSession>& session)
+{
+    auto browsersetting = session->getBrowserSettingJSON();
+    std::ostringstream jsonStream;
+    browsersetting->stringify(jsonStream, 2);
+    const std::string& jsonStr = jsonStream.str();
+    session->sendTextFrame("browsersetting: " + jsonStr);
+    session->setSentBrowserSetting(true);
+    LOG_TRC("Sent browsersetting json[" << jsonStr << "] to client with sessionId["
+                                        << session->getId() << ']');
+}
+
+void DocumentBroker::getBrowserSettingSync(const std::shared_ptr<ClientSession>& session,
+                                           const std::string& userSettingsUri)
+{
+    if (session == nullptr || session->getSentBrowserSetting())
+        return;
+
+    const auto userSettingsResponse = sendHttpSyncRequest(userSettingsUri, "usersetting");
+    if (!userSettingsResponse)
+        return;
+
+    const std::string& body = userSettingsResponse->getBody();
+    Poco::JSON::Object::Ptr settings;
+    if (!JsonUtil::parseJSON(body, settings))
+    {
+        LOG_ERR("Failed to parse usersetting json");
+        return;
+    }
+
+    const auto browsersetting = settings->getArray("browsersetting");
+    if (!browsersetting || browsersetting->size() == 0)
+    {
+        LOG_INF("browsersetting doesn't exist in usersetting json or empty");
+        sendBrowserSetting(session);
+        return;
+    }
+
+    const auto firstElem = browsersetting->get(0).extract<Poco::JSON::Object::Ptr>();
+    if (!firstElem)
+    {
+        sendBrowserSetting(session);
+        return;
+    }
+
+    const std::string browsersettingUri = JsonUtil::getJSONValue<std::string>(firstElem, "uri");
+
+    const auto browsersettingResponse = sendHttpSyncRequest(browsersettingUri, "browsersetting");
+    if (!browsersettingResponse)
+    {
+        sendBrowserSetting(session);
+        return;
+    }
+
+    parseBrowserSettings(session, browsersettingResponse->getBody());
+    sendBrowserSetting(session);
+}
+
+struct PresetRequest
+{
+    std::string _uri;
+    std::string _fileName;
+    std::string _id;
+};
+
+std::shared_ptr<PresetsInstallTask>
+DocumentBroker::asyncInstallPresets(SocketPoll& poll, const std::string& configId,
+                                    const std::string& userSettingsUri,
+                                    const std::string& presetsPath,
+                                    const std::shared_ptr<ClientSession>& session,
+                                    const std::function<void(bool)>& installFinishedCB)
+{
+    // Download the json for settings
+    const Poco::URI settingsUri{userSettingsUri};
+    std::shared_ptr<http::Session> httpSession(StorageConnectionManager::getHttpSession(settingsUri));
+    http::Request request(settingsUri.getPathAndQuery());
+
+    const std::string uriAnonym = COOLWSD::anonymizeUrl(userSettingsUri);
+    LOG_DBG("Getting settings from [" << uriAnonym << ']');
+
+    auto presetTasks = std::make_shared<PresetsInstallTask>(poll, configId, presetsPath,
+                                                            installFinishedCB);
+
+    // When result arrives, extract uris of what we want to install to the jail's user presets
+    // and async download and install those.
+    http::Session::FinishedCallback finishedCallback =
+        [uriAnonym, presetsPath, presetTasks,
+         session](const std::shared_ptr<http::Session>& configSession)
+    {
+        if (SigUtil::getShutdownRequestFlag())
+        {
+            LOG_DBG("Shutdown flagged, giving up on in-flight requests");
+            presetTasks->install(nullptr, nullptr);
+            return;
+        }
+
+        const std::shared_ptr<const http::Response> httpResponse = configSession->response();
+        const http::StatusLine statusLine = httpResponse->statusLine();
+
+        LOG_TRC("DocumentBroker::asyncInstallPresets returned " << statusLine.statusCode());
+        const bool failed = (statusLine.statusCode() != http::StatusCode::OK);
+        if (failed)
+        {
+            LOG_ERR("Failed to get settings json from [" << uriAnonym << "] with status["
+                                                         << statusLine.reasonPhrase() << ']');
+            presetTasks->install(nullptr, nullptr);
+            return;
+        }
+
+        const std::string& body = httpResponse->getBody();
+
+        Poco::JSON::Object::Ptr settings;
+        if (!JsonUtil::parseJSON(body, settings))
+        {
+            LOG_ERR("Parse of userSettings json: " << uriAnonym << " failed");
+            presetTasks->install(nullptr, nullptr);
+            return;
+        }
+
+        presetTasks->install(settings, session);
+    };
+
+    httpSession->setFinishedHandler(std::move(finishedCallback));
+
+    // Run the request on the WebServer Poll.
+    httpSession->asyncRequest(request, poll);
+
+    return presetTasks;
+}
+
+void DocumentBroker::asyncInstallPreset(
+    SocketPoll& poll, const std::string& configId, const std::string& presetUri,
+    const std::string& presetStamp, const std::string& presetFile, const std::string& id,
+    const std::function<void(const std::string&, bool)>& finishedCB,
+    const std::shared_ptr<ClientSession>& session)
+{
+    const std::string uriAnonym = COOLWSD::anonymizeUrl(presetUri);
+    LOG_DBG("Getting preset from [" << uriAnonym << ']');
+
+    const Poco::URI uri{presetUri};
+    std::shared_ptr<http::Session> httpSession(StorageConnectionManager::getHttpSession(uri));
+    http::Request request(uri.getPathAndQuery());
+
+    http::Session::FinishedCallback finishedCallback =
+        [configId, presetUri, presetStamp, uriAnonym,
+         presetFile, id, finishedCB](const std::shared_ptr<http::Session>& presetSession)
+    {
+        if (SigUtil::getShutdownRequestFlag())
+        {
+            LOG_DBG("Shutdown flagged, giving up on in-flight requests");
+            return;
+        }
+
+        const std::shared_ptr<const http::Response> presetHttpResponse = presetSession->response();
+
+        bool success = false;
+        const http::StatusLine statusLine = presetHttpResponse->statusLine();
+        if (statusLine.statusCode() != http::StatusCode::OK)
+        {
+            LOG_ERR("Failed to fetch preset uri[" << uriAnonym << "] with status["
+                                                  << statusLine.reasonPhrase() << ']');
+            FileUtil::removeFile(presetFile);
+        }
+        else
+        {
+            success = true;
+            LOG_INF("Fetch of preset uri[" << uriAnonym << "] to " << presetFile << " succeeded");
+            Cache::cacheConfigFile(configId, presetUri, presetStamp, presetFile);
+
+            // delete the browsersetting json from jail
+            // we only saved it to make sure cache util can copy it
+            if (presetFile.ends_with("browsersetting.json"))
+                FileUtil::removeFile(presetFile);
+        }
+
+        if (finishedCB)
+            finishedCB(id, success);
+    };
+
+    httpSession->setFinishedHandler(std::move(finishedCallback));
+
+    // Run the request on the WebServer Poll.
+    httpSession->asyncRequest(request, poll);
+
+    const std::shared_ptr<http::Response> presetHttpResponse = httpSession->response();
+
+    if (presetFile == "browsersetting.json")
+    {
+        if (session == nullptr || session->getSentBrowserSetting())
+            return;
+        const std::string& body = presetHttpResponse->getBody();
+        DocumentBroker::parseBrowserSettings(session, body);
+        DocumentBroker::sendBrowserSetting(session);
+    }
+    presetHttpResponse->saveBodyToFile(presetFile);
+}
+
+void DocumentBroker::parseBrowserSettings(const std::shared_ptr<ClientSession>& session,
+                                          const std::string& responseBody)
+{
+    Poco::JSON::Parser parser;
+    auto result = parser.parse(responseBody);
+    auto browsersetting = result.extract<Poco::JSON::Object::Ptr>();
+    if (browsersetting.isNull())
+    {
+        LOG_INF("browsersetting.json is empty");
+        return;
+    }
+
+    LOG_TRC("Setting _browserSettingsJSON for clientsession[" << session->getId() << ']');
+    session->setBrowserSettingsJSON(browsersetting);
 }
 
 bool DocumentBroker::processPlugins(std::string& localPath)
@@ -2547,7 +3026,7 @@ void DocumentBroker::handleUploadToStorageFailed(const StorageBase::UploadResult
         LOG_DBG("Last upload failed: " << uploadResult.getReason());
 
         // Since we've failed to get a response, we cannot know if the
-        // Storage has been updated. As such, we need to re-sycn the
+        // Storage has been updated. As such, we need to re-sync the
         // document's last modified timestamp.
         startActivity(DocumentState::Activity::SyncFileTimestamp);
 
@@ -3137,7 +3616,11 @@ bool DocumentBroker::sendUnoSave(const std::shared_ptr<ClientSession>& session,
 std::string DocumentBroker::getJailRoot() const
 {
 #if !MOBILEAPP
-    assert(!_jailId.empty());
+    if (_jailId.empty())
+    {
+        LOG_WRN("Trying to get the jail root of a not yet downloaded document.");
+        return std::string();
+    }
     return Poco::Path(COOLWSD::ChildRoot, _jailId).toString();
 #else
     return std::string();
@@ -3261,6 +3744,10 @@ std::size_t DocumentBroker::removeSession(const std::shared_ptr<ClientSession>& 
                                      << ", DontSaveIfUnmodified: " << dontSaveIfUnmodified
                                      << ", IsPossiblyModified: " << isPossiblyModified());
 
+#if !MOBILEAPP
+        /// make sure to upload preset to WOPIHost
+        uploadPresetsToWopiHost(session->getAuthorization());
+#endif
 #ifndef IOS
         if (activeSessionCount <= 1)
         {
@@ -3397,7 +3884,7 @@ void DocumentBroker::disconnectSessionInternal(const std::shared_ptr<ClientSessi
                 // If we send disconnect, we risk hanging because we flag Core for
                 // quiting via unipoll, but Core would still continue loading.
                 // If at the end of loading it shows a dialog (such as the macro or
-                // csv import dialogs), it will wait for their dismissal indefinetely.
+                // csv import dialogs), it will wait for their dismissal indefinitely.
                 // Neither would our load-timeout kick in, since we would be gone.
                 LOG_INF("Session [" << session->getName() << "] disconnected but DocKey ["
                                     << _docKey
@@ -3539,6 +4026,142 @@ void DocumentBroker::alertAllUsers(const std::string& msg)
             it.second->enqueueSendMessage(payload);
     }
 }
+
+#if !MOBILEAPP
+void DocumentBroker::syncBrowserSettings(const std::string& userId, const std::string& key,
+                                         const std::string& value)
+{
+    ASSERT_CORRECT_THREAD();
+    LOG_DBG("Updating browser setting with key[" << key << "] and value[" << value
+                                                 << "] for all sessions with userId [" << userId
+                                                 << ']');
+
+    bool upload = false;
+    for (auto& it : _sessions)
+    {
+        if (it.second->getUserId() != userId)
+            continue;
+
+        it.second->updateBrowserSettingsJSON(key, value);
+        if (!upload)
+        {
+            uploadBrowserSettingsToWopiHost(it.second);
+            upload = true;
+        }
+    }
+}
+
+Poco::URI DocumentBroker::getPresetUploadBaseUrl(const std::string& docKey)
+{
+    Poco::URI uriObject(Uri::decode(docKey));
+
+    // extract base wopiUri from docKey
+    std::string path = uriObject.getPath();
+    size_t pos = path.find("/files/");
+    if (pos != std::string::npos)
+        path = path.substr(0, pos);
+    path.append("/settings/upload");
+    uriObject.setPath(path);
+    return uriObject;
+}
+
+void DocumentBroker::uploadPresetsToWopiHost(const Authorization& auth)
+{
+    const std::string& jailPresetsPath = FileUtil::buildLocalPathToJail(
+        COOLWSD::EnableMountNamespaces, getJailRoot(), JAILED_CONFIG_ROOT);
+
+    Poco::URI uriObject = DocumentBroker::getPresetUploadBaseUrl(_docKey);
+
+    LOG_DBG("Uploading presets from jailPath[" << jailPresetsPath << "] to wopiHost["
+                                               << uriObject.toString() << ']');
+
+    std::string searchDir = jailPresetsPath;
+    searchDir.append("wordbook");
+    const auto fileNames = FileUtil::getDirEntries(searchDir);
+    std::error_code ec;
+    for (const auto& fileName : fileNames)
+    {
+        std::string fileJailPath = searchDir;
+        fileJailPath.append("/");
+        fileJailPath.append(fileName);
+        std::filesystem::file_time_type currentTimestamp =
+            std::filesystem::last_write_time(fileJailPath, ec);
+        if (ec || currentTimestamp <= _presetTimestamp[fileName])
+        {
+            LOG_TRC("Skip uploading preset file [" << fileName << "] to wopiHost["
+                                                   << uriObject.toString() << "], "
+                                                   << (ec ? "missing" : "no modification"));
+            continue;
+        }
+
+        std::string filePath = "/settings/userconfig/wordbook/";
+        filePath.append(fileName);
+        uriObject.addQueryParameter("fileId", filePath);
+        auth.authorizeURI(uriObject);
+
+        auto httpRequest = StorageConnectionManager::createHttpRequest(uriObject, auth);
+        httpRequest.setVerb(http::Request::VERB_POST);
+
+        LOG_TRC("Uploading file from jailPath[" << filePath << "] to wopiHost["
+                                                << uriObject.toString() << ']');
+
+        httpRequest.setBodyFile(fileJailPath);
+        httpRequest.header().set("Content-Type", "application/octet-stream");
+
+        auto httpSession = StorageConnectionManager::getHttpSession(uriObject);
+        auto httpResponse = httpSession->syncRequest(httpRequest);
+
+        http::StatusLine statusLine = httpResponse->statusLine();
+        if (statusLine.statusCode() != http::StatusCode::OK)
+        {
+            LOG_ERR("Failed to upload file[" << fileName << "] to wopiHost["
+                                             << uriObject.getAuthority() << " with status["
+                                             << statusLine.reasonPhrase() << ']');
+        }
+
+        LOG_DBG("Successfully uploaded presetFile[" << fileName << ']');
+    }
+}
+
+void DocumentBroker::uploadBrowserSettingsToWopiHost(const std::shared_ptr<ClientSession>& session)
+{
+    const Authorization& auth = session->getAuthorization();
+    Poco::URI uriObject = DocumentBroker::getPresetUploadBaseUrl(_docKey);
+
+    const std::string& filePath = "/settings/userconfig/browsersetting/browsersetting.json";
+    uriObject.addQueryParameter("fileId", filePath);
+    auth.authorizeURI(uriObject);
+
+    const std::string& uriAnonym = COOLWSD::anonymizeUrl(uriObject.toString());
+
+    auto httpRequest = StorageConnectionManager::createHttpRequest(uriObject, auth);
+    httpRequest.setVerb(http::Request::VERB_POST);
+    auto httpSession = StorageConnectionManager::getHttpSession(uriObject);
+
+    auto browserSettingsJSON = session->getBrowserSettingJSON();
+    std::ostringstream jsonStream;
+    browserSettingsJSON->stringify(jsonStream, 2);
+    httpRequest.setBody(jsonStream.str(), "application/json; charset=utf-8");
+
+    http::Session::FinishedCallback finishedCallback =
+        [uriAnonym](const std::shared_ptr<http::Session>& wopiSession)
+    {
+        const std::shared_ptr<const http::Response> httpResponse = wopiSession->response();
+        const http::StatusLine statusLine = httpResponse->statusLine();
+        if (statusLine.statusCode() != http::StatusCode::OK)
+        {
+            LOG_ERR("Failed to upload updated browsersetting to wopiHost["
+                    << uriAnonym << "] with status[" << statusLine.reasonPhrase() << ']');
+            return;
+        }
+        LOG_TRC("Successfully uploaded browsersetting to wopiHost");
+    };
+
+    LOG_DBG("Uploading updated browsersetting to wopiHost[" << uriAnonym << ']');
+    httpSession->setFinishedHandler(std::move(finishedCallback));
+    httpSession->asyncRequest(httpRequest, *COOLWSD::getWebServerPoll());
+}
+#endif
 
 void DocumentBroker::setKitLogLevel(const std::string& level)
 {
@@ -3849,6 +4472,7 @@ bool DocumentBroker::lookupSendClipboardTag(const std::shared_ptr<StreamSocket> 
                 << "Content-Type: application/octet-stream\r\n"
                 << "X-Content-Type-Options: nosniff\r\n"
                 << "X-COOL-Clipboard: true\r\n"
+                << "Cache-Control: no-cache\r\n"
                 << "Connection: close\r\n"
                 << "\r\n";
             oss.write(saved->c_str(), saved->length());
@@ -3879,7 +4503,7 @@ void DocumentBroker::handleClipboardRequest(ClipboardRequest type,  const std::s
                                             const std::string &viewId, const std::string &tag,
                                             const std::shared_ptr<std::string> &data)
 {
-    for (auto& it : _sessions)
+    for (const auto& it : _sessions)
     {
         if (it.second->matchesClipboardKeys(viewId, tag))
         {
@@ -4230,6 +4854,21 @@ bool DocumentBroker::forwardToChild(const std::shared_ptr<ClientSession>& sessio
             msg += " jail=" + _uriJailed;
             msg += " xjail=" + _uriJailedAnonym;
             msg += ' ' + tokens.cat(' ', 2);
+#if !MOBILEAPP
+            if (_asyncInstallTask)
+            {
+                auto sendLoad = [selfWeak = weak_from_this(), this, msg, binary](bool success) {
+                    if (!success)
+                        return;
+                    std::shared_ptr<DocumentBroker> selfLifecycle = selfWeak.lock();
+                    if (!selfLifecycle)
+                        return;
+                    _childProcess->sendFrame(msg, binary);
+                };
+                _asyncInstallTask->appendCallback(sendLoad);
+                return true;
+            }
+#endif
             return _childProcess->sendFrame(msg, binary);
         }
     }
@@ -4520,7 +5159,7 @@ void DocumentBroker::checkFileInfo(const std::shared_ptr<ClientSession>& session
     // CheckFileInfo asynchronously.
     assert(!_checkFileInfo && "Unexpected CheckFileInfo in progress");
     _checkFileInfo =
-        std::make_unique<CheckFileInfo>(_poll, session->getPublicUri(), std::move(cfiContinuation));
+        std::make_shared<CheckFileInfo>(_poll, session->getPublicUri(), std::move(cfiContinuation));
     _checkFileInfo->checkFileInfo(redirectLimit);
 }
 #endif // !MOBILEAPP

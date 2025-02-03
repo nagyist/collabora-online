@@ -1832,27 +1832,13 @@ L.Control.JSDialogBuilder = L.Control.extend({
 		return false;
 	},
 
-	_createComment: function(container, data, isRoot) {
+	_createComment: function(container, data) {
 		// Create annotation copy and add it into the container.
+		container.appendChild(data.annotation.sectionProperties.container);
 
-		var annotation = new app.definitions.Comment(data.data, data.id === 'new' ? {noMenu: true} : {}, this);
-		annotation.context = data.annotation.containerObject.context;
-		annotation.documentTopLeft = data.annotation.containerObject.documentTopLeft;
-		annotation.containerObject = data.annotation.containerObject;
-		annotation.sectionProperties.section = annotation;
-		annotation.sectionProperties.commentListSection = data.annotation.sectionProperties.commentListSection;
-		annotation.onInitialize();
-
-		if (app.isCommentEditingAllowed())
-			annotation.sectionProperties.menu.isRoot = isRoot;
-
-		container.appendChild(annotation.sectionProperties.container);
-
-		annotation.show();
-		annotation.update();
-		annotation.setExpanded();
-		annotation.hideMarker();
-		annotation.sectionProperties.annotationMarker = null;
+		data.annotation.show();
+		data.annotation.update();
+		data.annotation.setExpanded();
 	},
 
 	_rootCommentControl: function(parentContainer, data, builder) {
@@ -1874,7 +1860,7 @@ L.Control.JSDialogBuilder = L.Control.extend({
 
 		container.annotation = data.annotation;
 		container.id = data.id;
-		builder._createComment(container, data, true);
+		builder._createComment(container, data);
 		if (data.children.length > 1 && mainContainer.id !== 'comment-thread' + data.id)
 		{
 			var numberOfReplies = data.children.length - 1;
@@ -2053,6 +2039,7 @@ L.Control.JSDialogBuilder = L.Control.extend({
 			'scalignmentpropertypanel': 'aligntop',
 			'hyperlinkdialog': 'inserthyperlink',
 			'remotelink': 'inserthyperlink',
+			'remoteaicontent': 'sdrespageobjs',
 			'openhyperlinkoncursor': 'inserthyperlink',
 			'pageformatdialog': 'pagedialog',
 			'backgroundcolor': 'fillcolor',
@@ -2421,11 +2408,18 @@ L.Control.JSDialogBuilder = L.Control.extend({
 			$(div).addClass('has-dropdown');
 			var arrowbackground = L.DomUtil.create('div', 'arrowbackground', div);
 			L.DomUtil.create('i', 'unoarrow', arrowbackground);
+			arrowbackground.tabIndex = '0';
 			controls['arrow'] = arrowbackground;
-			$(arrowbackground).click(function (event) {
-				if (!div.hasAttribute('disabled')) {
-					builder.callback('toolbox', 'openmenu', parentContainer, data.command, builder);
-					event.stopPropagation();
+
+			// Attach event listeners for both 'click' and 'keydown'
+			arrowbackground.addEventListener('click', function (event) {
+				openToolBoxMenu(event, div);
+			});
+			arrowbackground.addEventListener('keydown', function (event) {
+				switch (event.key) {
+					case 'Enter':
+						openToolBoxMenu(event, div);
+						break;
 				}
 			});
 
@@ -2433,6 +2427,13 @@ L.Control.JSDialogBuilder = L.Control.extend({
 				builder.callback('toolbox', 'closemenu', parentContainer, data.command, builder);
 			};
 		}
+
+		var openToolBoxMenu = function(event, div) {
+			if (!div.hasAttribute('disabled')) {
+				builder.callback('toolbox', 'openmenu', parentContainer, data.command, builder);
+				event.stopPropagation();
+			}
+		};
 
 		var clickFunction = function (e) {
 			if (!div.hasAttribute('disabled')) {
@@ -2460,7 +2461,7 @@ L.Control.JSDialogBuilder = L.Control.extend({
 
 		$(controls.button).on('click', clickFunction);
 		$(controls.label).on('click', clickFunction);
-		// We need a way to also handle the cutom tooltip for any tool button like save in shortcut bar
+		// We need a way to also handle the custom tooltip for any tool button like save in shortcut bar
 		if (data.isCustomTooltip) {
 			this._handleCutomTooltip(div, builder);
 		}
@@ -2977,9 +2978,9 @@ L.Control.JSDialogBuilder = L.Control.extend({
 			control.style.gridColumn = 'span ' + parseInt(data.width);
 		}
 
-
 		// natural tab-order when using keyboard navigation
 		if (control && !control.hasAttribute('tabIndex')
+			&& control.querySelectorAll('[tabindex]').length === 0
 			&& data.type !== 'container'
 			&& data.type !== 'tabpage'
 			&& data.type !== 'tabcontrol'

@@ -541,6 +541,12 @@ td.jsdialog > [id^='table-box']:not(.sidebar) {
 	white-space: nowrap;
 }
 
+#ServerAuditDialog .ui-treeview-entry {
+	display: grid;
+	grid-template-columns: var(--btn-img-size-m) 6fr 3fr;
+	white-space: normal;
+}
+
 .ui-treeview-expanded-content {
 	display: grid;
 }
@@ -566,6 +572,21 @@ td.jsdialog > [id^='table-box']:not(.sidebar) {
 	display: grid;
 	grid-auto-flow: column;
 	/* grid-column: '1 / ' + (this._columns + 1) - set inside JS */
+}
+
+#ServerAuditDialog .ui-treeview-headers {
+	display: grid;
+	grid-column-end: 4 !important;
+	grid-template-columns: 0fr 6fr 3fr;
+	margin-inline-start: 4px;
+}
+
+#ServerAuditDialog .ui-treeview-headers div.ui-treeview-icon-column {
+	width: 0px /* prevent display of ui-treeview-icon-column in ui-treeview-header */
+}
+
+#ServerAuditDialog .ui-treeview-headers > div:nth-last-child(1) {
+	margin-inline-start: 7px;
 }
 
 .ui-treeview-header {
@@ -784,6 +805,7 @@ input[type='checkbox']:checked.autofilter, .jsdialog input[type='checkbox']:chec
 
 .jsdialog .radiobutton > label {
 	vertical-align: middle;
+	white-space: nowrap;
 }
 
 .jsdialog input[type='radio'][disabled='disabled'] ~ label {
@@ -983,7 +1005,7 @@ input[type='number']:hover::-webkit-outer-spin-button {
 }
 
 .modalpopup[id$='-dropdown'] {
-	/* submenu is inserted into the same overlay, dont make it relative to parent */
+	/* submenu is inserted into the same overlay, don't make it relative to parent */
 	position: absolute !important;
 }
 
@@ -1328,7 +1350,7 @@ input[type='number']:hover::-webkit-outer-spin-button {
 	color: #636363 !important;
 }
 
-/* Dialog-specific excelptions*/
+/* Dialog-specific exceptions */
 #DefineNameDialog .cell.jsdialog,
 #ManageNamesDialog .cell.jsdialog {
 	padding-left: 0px;
@@ -1356,7 +1378,7 @@ input[type='number']:hover::-webkit-outer-spin-button {
 	display: none;
 }
 
-/* Macros dialos */
+/* Macros dialog */
 
 #MacroWarnMedium label {
 	max-width: 400px;
@@ -2208,11 +2230,12 @@ kbd,
 }
 
 #ServerAuditDialog #ServerAuditDialog-mainbox {
-	min-width: calc(min(800px, 80vw));
+	min-width: calc(min(600px, 80vw));
 }
 
 #ServerAuditDialog .ui-treeview {
 	border-color: transparent;
+	max-height: max-content;
 }
 #ServerAuditDialog .ui-treeview td[role='gridcell'] {
 	padding-inline-start: 0;

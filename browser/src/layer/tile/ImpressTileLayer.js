@@ -12,7 +12,7 @@
  * Impress tile layer is used to display a presentation document
  */
 
-/* global app $ L */
+/* global app $ L cool */
 
 L.ImpressTileLayer = L.CanvasTileLayer.extend({
 
@@ -108,14 +108,17 @@ L.ImpressTileLayer = L.CanvasTileLayer.extend({
 		}
 	},
 
-	newAnnotation: function (comment) {
+	newAnnotation: function (commentData) {
 		var ratio = this._tileWidthTwips / this._tileSize;
 		var docTopLeft = app.sectionContainer.getDocumentTopLeft();
 		docTopLeft = [docTopLeft[0] * ratio, docTopLeft[1] * ratio];
-		comment.anchorPos = [docTopLeft[0], docTopLeft[1]];
-		comment.rectangle = [docTopLeft[0], docTopLeft[1], 566, 566];
+		commentData.anchorPos = [docTopLeft[0], docTopLeft[1]];
+		commentData.rectangle = [docTopLeft[0], docTopLeft[1], 566, 566];
 
-		comment.parthash = app.impress.partList[this._selectedPart].hash;
+		commentData.parthash = app.impress.partList[this._selectedPart].hash;
+
+		const comment = new cool.Comment(commentData, {}, app.sectionContainer.getSectionWithName(L.CSections.CommentList.name));
+
 		var annotation = app.sectionContainer.getSectionWithName(L.CSections.CommentList.name).add(comment);
 		app.sectionContainer.getSectionWithName(L.CSections.CommentList.name).modify(annotation);
 	},
@@ -197,7 +200,6 @@ L.ImpressTileLayer = L.CanvasTileLayer.extend({
 		}
 
 		if (values.comments) {
-			app.sectionContainer.getSectionWithName(L.CSections.CommentList.name).clearList();
 			app.sectionContainer.getSectionWithName(L.CSections.CommentList.name).importComments(values.comments);
 		} else {
 			L.CanvasTileLayer.prototype._onCommandValuesMsg.call(this, textMsg);
@@ -341,21 +343,6 @@ L.ImpressTileLayer = L.CanvasTileLayer.extend({
 
 		if (app.file.fileBasedView)
 			this._updateFileBasedView();
-	},
-
-	_addHighlightSelectedWizardComment: function(annotation) {
-		if (this.lastWizardCommentHighlight) {
-			this.lastWizardCommentHighlight.removeClass('impress-comment-highlight');
-		}
-		if (annotation._annotationMarker) {
-			this.lastWizardCommentHighlight = $(this._map._layers[annotation._annotationMarker._leaflet_id]._icon);
-			this.lastWizardCommentHighlight.addClass('impress-comment-highlight');
-		}
-	},
-
-	_removeHighlightSelectedWizardComment: function() {
-		if (this.lastWizardCommentHighlight)
-			this.lastWizardCommentHighlight.removeClass('impress-comment-highlight');
 	},
 
 	_invalidateAllPreviews: function () {

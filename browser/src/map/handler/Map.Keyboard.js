@@ -400,6 +400,11 @@ L.Map.Keyboard = L.Handler.extend({
 		if (this._map.uiManager.isUIBlocked())
 			return;
 
+		if (ev.shortCutActivated === true) {
+			window.app.console.log('Shortcut for: ' + ev.code + ' already handled');
+			return;
+		}
+
 		if (window.KeyboardShortcuts.processEvent(app.UI.language.fromURL, ev)) {
 			ev.preventDefault();
 			return;
@@ -482,6 +487,7 @@ L.Map.Keyboard = L.Handler.extend({
 		this._map.userList.followUser(this._map._docLayer._viewId, false);
 
 		if (window.KeyboardShortcuts.processEvent(app.UI.language.fromURL, ev)) {
+			ev.shortCutActivated = true;
 			ev.preventDefault();
 			return;
 		}
@@ -662,6 +668,11 @@ L.Map.Keyboard = L.Handler.extend({
 
 		// Control + INSERT
 		if (this._isCtrlKey(e) && e.keyCode === this.keyCodes.INSERT) {
+			return true;
+		}
+
+		// Control + F3, ignore Autotext dialog
+		if (this._isCtrlKey(e) && e.keyCode === this.keyCodes.F3) {
 			return true;
 		}
 

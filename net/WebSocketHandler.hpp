@@ -749,22 +749,22 @@ protected:
         char scratch[16];
 
         // All unfragmented frames must have the Fin bit.
-        scratch[slen++] = WSFrameMask::Fin | flags;
+        scratch[slen++] = static_cast<char>(WSFrameMask::Fin | flags);
 
         int maskFlag = _isMasking ? 0x80 : 0;
         if (len < 126)
         {
-            scratch[slen++] = (char)(len | maskFlag);
+            scratch[slen++] = static_cast<char>(len | maskFlag);
         }
         else if (len <= 0xffff)
         {
-            scratch[slen++] = (char)(126 | maskFlag);
+            scratch[slen++] = static_cast<char>(126 | maskFlag);
             scratch[slen++] = static_cast<char>((len >> 8) & 0xff);
             scratch[slen++] = static_cast<char>((len >> 0) & 0xff);
         }
         else
         {
-            scratch[slen++] = (char)(127 | maskFlag);
+            scratch[slen++] = static_cast<char>(127 | maskFlag);
             scratch[slen++] = static_cast<char>((len >> 56) & 0xff);
             scratch[slen++] = static_cast<char>((len >> 48) & 0xff);
             scratch[slen++] = static_cast<char>((len >> 40) & 0xff);
@@ -900,7 +900,7 @@ protected:
             // during unit-tests. Dropping WS frames results in random test failures.
             // But more important is to flush the data we have before closing the socket.
             // There is a FIXME item in Session::shutdown specifically to address this case.
-            // When we terminte a client's connection in DocumentBroker::finalRemoveSession,
+            // When we terminate a client's connection in DocumentBroker::finalRemoveSession,
             // we send the close frame and close the socket via Socket::closeConnection(),
             // which is called immediately after *this* function (see shutdown() above).
             // So, a common scenario is when we want to shutdown all clients. The stack
@@ -916,7 +916,7 @@ protected:
             // DocumentBroker::terminateChild at wsd/DocumentBroker.cpp:2421
             //
             // The proper fix is to flag the socket(s) for shutdown, but continue
-            // polling until we completly flush the buffered data, then we close
+            // polling until we completely flush the buffered data, then we close
             // the socket in question. This isn't possible in the above scenario,
             // and a proper fix is to modify DocumentBroker's poll to take this
             // flushing into account (note that currently terminateChild is called

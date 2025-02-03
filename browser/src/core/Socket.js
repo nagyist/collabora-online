@@ -63,6 +63,7 @@ app.definitions.Socket = L.Class.extend({
 		} else	{
 			try {
 				this.socket = window.createWebSocket(this.getWebSocketBaseURI(map));
+				window.socket = this.socket;
 			} catch (e) {
 				this._map.fire('error', {msg: _('Oops, there is a problem connecting to {productname}: ').replace('{productname}', (typeof brandProductName !== 'undefined' ? brandProductName : 'Collabora Online Development Edition (unbranded)')) + e, cmd: 'socket', kind: 'failed', id: 3});
 				return;
@@ -1348,7 +1349,7 @@ app.definitions.Socket = L.Class.extend({
 				this._map.fire('statusindicator', info);
 				this._map._fireInitComplete('statusindicatorfinish');
 				// show shutting down popup after saving is finished
-				// if we show the popup just after the shuttingdown messsage, it will be overwitten by save popup
+				// if we show the popup just after the shuttingdown message, it will be overwitten by save popup
 				if (app.idleHandler._serverRecycling) {
 					this._map.showBusy(_('Server is shutting down'), false);
 				}
@@ -1361,6 +1362,9 @@ app.definitions.Socket = L.Class.extend({
 		}
 		else if (textMsg.startsWith('hyperlinkclicked:')) {
 			this._onHyperlinkClickedMsg(textMsg);
+		}
+		else if (textMsg.startsWith('browsersetting:')) {
+			window.prefs._initializeBrowserSetting(textMsg);
 		}
 
 		if (textMsg.startsWith('downloadas:')) {
@@ -1577,8 +1581,7 @@ app.definitions.Socket = L.Class.extend({
 			this._map.setPermission(app.file.permission);
 			window.migrating = false;
 			this._map.uiManager.initializeSidebar();
-			if (typeof window.initializedUI === 'function')
-				window.initializedUI();
+			this._map.uiManager.refreshTheme();
 		}
 
 		this._map.fire('docloaded', {status: true});
@@ -1675,10 +1678,8 @@ app.definitions.Socket = L.Class.extend({
 		if (this._map._docLayer) {
 			this._map._docLayer.removeAllViews();
 			this._map._docLayer._resetClientVisArea();
-			if (GraphicSelection.hasActiveSelection()) {
+			if (GraphicSelection.hasActiveSelection())
 				GraphicSelection.rectangle = null;
-				this._map._docLayer._onUpdateGraphicSelection();
-			}
 			if (this._map._docLayer._docType === 'presentation')
 				app.file.textCursor.visible = false;
 

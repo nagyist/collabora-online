@@ -76,8 +76,8 @@ public:
     }
 
 private:
-    bool createDocBroker(const std::string& docKey, const std::string& url,
-                         const Poco::URI& uriPublic);
+    bool createDocBroker(const std::string& docKey, const std::string& configId,
+                         const std::string& url, const Poco::URI& uriPublic);
 
     void createClientSession(const std::string& docKey, const std::string& url,
                              const Poco::URI& uriPublic, const bool isReadOnly);
@@ -92,8 +92,10 @@ private:
                                      WebSocketHandler::StatusCodes statusCode);
 
 #if !MOBILEAPP
+    void launchInstallPresets();
+
     void checkFileInfo(const Poco::URI& uri, bool isReadOnly, int redirectionLimit);
-    std::unique_ptr<CheckFileInfo> _checkFileInfo;
+    std::shared_ptr<CheckFileInfo> _checkFileInfo;
 #endif // !MOBILEAPP
 
     Util::Stopwatch _birthday;

@@ -13,7 +13,7 @@
  */
 
 /* global app _ cool */
-/* global _ JSDialog app */
+/* global _ JSDialog app OtherViewCellCursorSection */
 
 L.Map.include({
 	/*
@@ -36,7 +36,7 @@ L.Map.include({
 			isTheSamePart =
 				app.calc.partHashes[docLayer._prevSelectedPart] === app.calc.partHashes[part];
 		} else if ((docType === 'presentation' || docType === 'drawing')) {
-			if (docLayer._prevSelectedPart !== undefined && part < app.impress.partList.length)
+			if (docLayer._prevSelectedPart !== undefined && part < app.impress.partList.length && app.impress.partList[docLayer._prevSelectedPart])
 				isTheSamePart = app.impress.partList[docLayer._prevSelectedPart].hash === app.impress.partList[part].hash;
 		} else if (docType !== 'text') {
 			console.error('Unknown docType: ' + docType);
@@ -109,7 +109,7 @@ L.Map.include({
 			docType: docLayer._docType
 		});
 
-		app.definitions.otherViewCellCursorSection.updateVisibilities();
+		OtherViewCellCursorSection.updateVisibilities();
 		app.definitions.otherViewCursorSection.updateVisibilities();
 		app.definitions.otherViewGraphicSelectionSection.updateVisibilities();
 		docLayer.eachView(docLayer._viewSelections, docLayer._onUpdateTextViewSelection, docLayer);
@@ -121,9 +121,7 @@ L.Map.include({
 			docLayer._invalidatePreviews();
 		}
 		docLayer._drawSearchResults();
-		if (!this._searchRequested) {
-			this.focus();
-		}
+		this.focus();
 	},
 
 	// part is the part index/id

@@ -13,7 +13,7 @@
  * Toolbar handler
  */
 
-/* global app $ window brandProductName DocUtil _ */
+/* global app $ window brandProductName DocUtil GraphicSelection _ */
 
 L.Map.include({
 
@@ -387,6 +387,14 @@ L.Map.include({
 				'.uno:DeleteComment', '.uno:ReplyComment', '.uno:ReplyToAnnotation', '.uno:PromoteComment', '.uno:ResolveComment',
 				'.uno:ResolveCommentThread', '.uno:ResolveComment', '.uno:EditAnnotation', '.uno:ExportToEPUB', '.uno:ExportToPDF',
 				'.uno:ExportDirectToPDF');
+
+			const graphicInfo = GraphicSelection.extraInfo;
+			if (graphicInfo && graphicInfo.isSignature)
+			{
+				// If the just added signature line shape is selected, allow
+				// moving/resizing it.
+				allowedCommands.push('.uno:TransformDialog', '.uno:MoveShapeHandle');
+			}
 		}
 
 		for (var i in allowedCommands) {
@@ -620,7 +628,7 @@ L.Map.include({
 		var docType = this.getDocType() === 'drawing' ? 'presentation' : this.getDocType();
 		mainSectionsQuery += ', div.' + docType + ' .section';
 
-		// Select nain sections elements within the mainDiv
+		// Select main sections elements within the mainDiv
 		var mainSections = mainDiv.querySelectorAll(mainSectionsQuery);
 		isAnyMatchingContent = false;
 
@@ -901,7 +909,7 @@ L.Map.include({
 	cancelSearch: function() {
 		var toolbar = window.mode.isMobile() ? app.map.mobileSearchBar: app.map.statusBar;
 		var searchInput = L.DomUtil.get('search-input');
-		this.resetSelection();
+		app.searchService.resetSelection();
 		if (toolbar) {
 			toolbar.showItem('cancelsearch', false);
 			toolbar.enableItem('searchprev', false);

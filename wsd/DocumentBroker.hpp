@@ -23,7 +23,9 @@
 
 #include <Poco/SharedPtr.h>
 #include <Poco/URI.h>
+#include <Poco/JSON/Object.h>
 
+#include "Authorization.hpp"
 #include "Log.hpp"
 #include "QuarantineUtil.hpp"
 #include "TileDesc.hpp"
@@ -48,6 +50,7 @@ class PrisonerRequestDispatcher;
 class CheckFileInfo;
 class DocumentBroker;
 class LockContext;
+class PresetsInstallTask;
 class TileCache;
 class Message;
 
@@ -232,15 +235,16 @@ public:
     };
 
     DocumentBroker(ChildType type, const std::string& uri, const Poco::URI& uriPublic,
-                   const std::string& docKey, unsigned mobileAppDocId,
+                   const std::string& docKey, const std::string& configId,
+                   unsigned mobileAppDocId,
                    std::unique_ptr<WopiStorage::WOPIFileInfo> wopiFileInfo);
 
 protected:
     /// Used by derived classes.
     DocumentBroker(ChildType type, const std::string& uri, const Poco::URI& uriPublic,
-                   const std::string& docKey)
-        : DocumentBroker(type, uri, uriPublic, docKey, /*mobileAppDocId=*/0,
-                         /*wopiFileInfo=*/nullptr)
+                   const std::string& docKey, const std::string& configId)
+        : DocumentBroker(type, uri, uriPublic, docKey, configId,
+                         /*mobileAppDocId=*/0, /*wopiFileInfo=*/nullptr)
     {
     }
 
@@ -345,6 +349,8 @@ public:
     Poco::URI getPublicUri() const { return _uriPublic; }
     const std::string& getJailId() const { return _jailId; }
     const std::string& getDocKey() const { return _docKey; }
+    // id of wopi shared config
+    const std::string& getConfigId() const { return _configId; }
     const std::string& getFilename() const { return _filename; };
     TileCache& tileCache() { return *_tileCache; }
     bool hasTileCache() { return _tileCache != nullptr; }
@@ -375,6 +381,15 @@ public:
     SocketPoll& getPoll();
 
     void alertAllUsers(const std::string& msg);
+
+#if !MOBILEAPP
+    void syncBrowserSettings(const std::string& userId, const std::string& key,
+                             const std::string& value);
+
+    void uploadBrowserSettingsToWopiHost(const std::shared_ptr<ClientSession>& session);
+
+    void uploadPresetsToWopiHost(const Authorization& auth);
+#endif
 
     void alertAllUsers(const std::string& cmd, const std::string& kind)
     {
@@ -539,6 +554,43 @@ public:
 
     StorageBase* getStorage() { return _storage.get(); }
 
+#if !MOBILEAPP
+    void asyncInstallPresets(const std::shared_ptr<ClientSession>& session,
+                             const std::string& configId,
+                             const std::string& userSettingsUri,
+                             const std::string& presetsPath);
+
+    static void getBrowserSettingSync(const std::shared_ptr<ClientSession>& session,
+                                      const std::string& userSettingsUri);
+
+    static void sendBrowserSetting(const std::shared_ptr<ClientSession>& session);
+
+    static void parseBrowserSettings(const std::shared_ptr<ClientSession>& session,
+                                     const std::string& responseBody);
+
+    /// Start an asynchronous Installation of the user presets, e.g. autotexts etc, as
+    /// described at userSettingsUri for installation into presetsPath
+    static std::shared_ptr<PresetsInstallTask> asyncInstallPresets(SocketPoll& poll,
+                                    const std::string& configId,
+                                    const std::string& userSettingsUri,
+                                    const std::string& presetsPath,
+                                    const std::shared_ptr<ClientSession>& session,
+                                    const std::function<void(bool)>& finishedCB);
+
+    /// Start an asynchronous Installation of a user preset resource, e.g. an autotext
+    /// file, to copy as presetFile
+    static void asyncInstallPreset(SocketPoll& poll, const std::string& configId,
+                                   const std::string& presetUri, const std::string& presetStamp,
+                                   const std::string& presetFile, const std::string& id,
+                                   const std::function<void(const std::string&, bool)>& finishedCB,
+                                   const std::shared_ptr<ClientSession>& session);
+
+    static Poco::URI getPresetUploadBaseUrl(const std::string& docKey);
+
+    static std::shared_ptr<const http::Response> sendHttpSyncRequest(const std::string& url,
+                                                                     const std::string& logContext);
+#endif // !MOBILEAPP
+
 private:
     /// Get the session that can write the document for save / locking / uploading.
     /// Note that if there is no loaded and writable session, the first will be returned.
@@ -576,7 +628,6 @@ private:
 
     /// Start an asynchronous CheckFileInfo request.
     void checkFileInfo(const std::shared_ptr<ClientSession>& uri, int redirectLimit);
-
 #endif // !MOBILEAPP
 
     bool isLoaded() const { return _docState.hadLoaded(); }
@@ -1596,7 +1647,8 @@ private:
 
 #if !MOBILEAPP
     /// The current CheckFileInfo request, if any.
-    std::unique_ptr<CheckFileInfo> _checkFileInfo;
+    std::shared_ptr<CheckFileInfo> _checkFileInfo;
+    std::shared_ptr<PresetsInstallTask> _asyncInstallTask;
 #endif
 
     /// Manage uploading to Storage.
@@ -1665,6 +1717,8 @@ private:
     /// Unique DocBroker ID for tracing and debugging.
     static std::atomic<unsigned> DocBrokerId;
 
+    std::string _configId;
+
     // Relevant only in the mobile apps
     const unsigned _mobileAppDocId;
 
@@ -1684,6 +1738,8 @@ private:
 
 #if !MOBILEAPP
     Admin& _admin;
+    /// stores timestamps of preset files when they get installed to compare later to check if they are modified
+    std::map<std::string, std::filesystem::file_time_type> _presetTimestamp;
 #endif
 
     // Last member.

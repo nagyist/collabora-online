@@ -16,6 +16,7 @@
 #include <net/Socket.hpp>
 
 #include <openssl/ssl.h>
+#include <openssl/err.h>
 
 #include <cerrno>
 #include <sstream>
@@ -304,6 +305,16 @@ private:
 
         if (rc > 0)
         {
+            const unsigned long bioError = ERR_peek_error();
+            if (bioError != 0)
+            {
+                LOG_DBG("Unexpected SSL error ("
+                        << bioError
+                        << ") after success implies uncleared earlier errors or "
+                           "a bug in the SSL library");
+                ERR_clear_error();
+            }
+
             // Success: Reset so we can do either.
             _sslWantsTo = SslWantsTo::Neither;
             return rc;
@@ -312,6 +323,8 @@ private:
         // Handle errors in the error-queue.
         const int ret = handleSslError(rc, last_errno, context);
         errno = last_errno; // Restore errno.
+
+        ERR_clear_error(); // Make sure we leave no errors in the queue.
 
         return ret;
     }
@@ -368,7 +381,7 @@ private:
         const unsigned long bioError = ERR_peek_error();
         const std::string bioErrStr = getBioError(bioError);
 
-        LOG_TRC("SSL error (" << context << "): " << sslErrorToName(sslError) << " (" << sslError
+        LOG_DBG("SSL error (" << context << "): " << sslErrorToName(sslError) << " (" << sslError
                               << "), rc: " << rc << ", errno: " << last_errno << " ("
                               << Util::symbolicErrno(last_errno) << ": "
                               << std::strerror(last_errno) << ")" << ": " << bioErrStr);
@@ -461,8 +474,6 @@ private:
                     {
                         // Socket closed. Not an error.
                         oss << " (" << context << "): closed. " << bioErrStr;
-                        LOG_INF(oss.str());
-                        return 0;
                     }
                     else if (rc == -1)
                     {
@@ -479,9 +490,7 @@ private:
                 }
 
                 oss << bioErrStr;
-                const std::string msg = oss.str();
-                LOG_TRC("Throwing SSL Error ("
-                        << context << "): " << msg); // Locate the source of the exception.
+                LOG_DBG("SSL Error (" << context << "): " << oss.str());
 
                 handshakeFail();
 
@@ -490,13 +499,12 @@ private:
                 if (!sslVerifyResult.empty())
                     LOG_ERR("SSL verification warning (" << context << "): " << sslVerifyResult);
 
-                errno = last_errno; // Restore errno before throwing.
-                throw std::runtime_error(msg);
+                last_errno = last_errno ? last_errno : EPIPE; // Set errno if unset.
+                return 0; // EOF.
             }
             break;
         }
 
-        errno = last_errno; // Restore errno.
         return rc;
     }
 
