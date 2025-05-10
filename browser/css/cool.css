@@ -28,15 +28,15 @@
 	--border-radius: 4px; /* buttons, widgets */
 	--border-radius-large: 10px; /* dialog */
 
-	--tooltip-font-size: 14px;
-	--default-font-size: 12px;
-	--header-font-size: 16px;
+	--tooltip-font-size: 0.875rem;
+	--default-font-size: 0.75rem;
+	--header-font-size: 1rem;
 	/* tab min font-size */
-	--tb-min-fs: 11px;
+	--tb-min-fs: 0.6875rem;
 	/* tab min font-size without units*/
 	--tb-min-fs-u: 11;
 	/* tab max font-size */
-	--tb-max-fs: 16px;
+	--tb-max-fs: 1rem;
 	/* tab max font-size without units*/
 	--tb-max-fs-u: 16;
 	/* tab font-size preferred value or scaler */
@@ -56,6 +56,7 @@
 
 html {
 	height: 100%;
+	font-size: 1rem;
 }
 
 body {
@@ -100,7 +101,7 @@ body {
 .accessibility-info-box {
 	width: 26px;
 	height: 16px;
-	font-size: 12px;
+	font-size: 0.75rem;
 	line-height: 16px;
 	text-align: center;
 	background-color: yellow;
@@ -207,8 +208,7 @@ body {
 	margin: 0;
 }
 
-.leaflet-progress-layer
-{
+.leaflet-progress-layer {
 	position: absolute;
 	top: 50%;
 	left: 50%;
@@ -351,7 +351,7 @@ body {
 	}
 }
 
-#sidebar-panel, #navigator-panel {
+.sidebar-panel {
 	padding: 0px;
 	margin: 0px;
 	position: relative;
@@ -360,11 +360,11 @@ body {
 	z-index: 1200;
 }
 
-#sidebar-panel::-webkit-scrollbar, #navigator-panel::-webkit-scrollbar {
+.sidebar-panel::-webkit-scrollbar {
 	width: 8px;
 }
 
-#sidebar-panel::-webkit-scrollbar-thumb, #navigator-panel::-webkit-scrollbar-thumb {
+.sidebar-panel::-webkit-scrollbar-thumb {
 	background-color: var(--color-border);
 }
 
@@ -419,7 +419,7 @@ body {
 	display: none;
 }
 
-#mobile-edit-button.impress.portrait{
+#mobile-edit-button.impress.portrait {
 	bottom: 70px;
 }
 
@@ -430,7 +430,7 @@ body {
 	transform: rotate(0deg);
 	transition: transform 0.5s;
 }
-#mobile-edit-button:active{
+#mobile-edit-button:active {
 	transform: scale(1.2);
 }
 #mobile-edit-button:active > #mobile-edit-button-image {
@@ -737,10 +737,10 @@ body {
 	box-shadow: 0px 4px 10px var(--color-box-shadow);
 }
 
-.cool-annotation-img .avatar-img{
+.cool-annotation-img .avatar-img {
 	border: none;
 }
-.cool-annotation-img > .avatar-img{
+.cool-annotation-img > .avatar-img {
 	display: block;
 	-moz-box-sizing: border-box;
 	box-sizing: border-box;
@@ -1036,7 +1036,7 @@ body {
 .hyperlink-popup .leaflet-popup-content {
 	white-space: nowrap;
 	margin: 6px 8px;
-	font-size: 14px;
+	font-size: 0.875rem;
 	line-height: 1;
 	overflow: hidden;
 }

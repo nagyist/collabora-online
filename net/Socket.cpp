@@ -20,8 +20,9 @@
 #include <common/TraceEvent.hpp>
 #include <common/Unit.hpp>
 #include <common/Util.hpp>
-#include <common/Util.hpp>
+#if !MOBILEAPP
 #include <common/Watchdog.hpp>
+#endif
 #include <net/HttpRequest.hpp>
 #include <net/NetUtil.hpp>
 #include <net/ServerSocket.hpp>
@@ -35,6 +36,7 @@
 
 #include <cerrno>
 #include <chrono>
+#include <condition_variable>
 #include <cstring>
 #include <cctype>
 #include <iomanip>
@@ -44,21 +46,28 @@
 #include <sstream>
 #include <cstdio>
 #include <string>
-#include <unistd.h>
-#include <sysexits.h>
+
 #include <sys/stat.h>
 #include <sys/types.h>
+
+#include <sysexits.h>
+#include <unistd.h>
 #include <sys/un.h>
+
 #ifdef __FreeBSD__
 #include <sys/ucred.h>
 #endif
 
 #include <Poco/MemoryStream.h>
+#if !MOBILEAPP
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/WebSocket.h> // computeAccept
+#endif
+
 #include <Poco/URI.h>
+
 #if ENABLE_SSL
 #include <Poco/Net/X509Certificate.h>
 #endif
@@ -72,14 +81,18 @@ namespace ThreadChecks
     std::atomic<bool> Inhibit(false);
 }
 
+#if !MOBILEAPP
+
 std::unique_ptr<Watchdog> SocketPoll::PollWatchdog;
+
+#define SOCKET_ABSTRACT_UNIX_NAME "0coolwsd-"
+
+#endif
 
 std::atomic<size_t> StreamSocket::ExternalConnectionCount = 0;
 
 net::DefaultValues net::Defaults = { .inactivityTimeout = std::chrono::seconds(3600),
                                      .maxExtConnections = 200000 /* arbitrary value to be resolved */ };
-
-#define SOCKET_ABSTRACT_UNIX_NAME "0coolwsd-"
 
 constexpr std::string_view Socket::toString(Type t)
 {
@@ -301,7 +314,9 @@ SocketPoll::SocketPoll(std::string threadName)
     , _pollStartIndex(0)
     , _owner(std::this_thread::get_id())
     , _threadStarted(0)
+#if !MOBILEAPP
     , _watchdogTime(Watchdog::getDisableStamp())
+#endif
     , _ownerThreadId(Util::getThreadId())
     , _stop(false)
     , _threadFinished(false)
@@ -309,9 +324,11 @@ SocketPoll::SocketPoll(std::string threadName)
 {
     ProfileZone profileZone("SocketPoll::SocketPoll");
 
+#if !MOBILEAPP
     static bool watchDogProfile = !!getenv("COOL_WATCHDOG");
     if (watchDogProfile && !PollWatchdog)
         PollWatchdog = std::make_unique<Watchdog>();
+#endif
 
     _wakeup[0] = -1;
     _wakeup[1] = -1;
@@ -320,16 +337,20 @@ SocketPoll::SocketPoll(std::string threadName)
 
     LOG_DBG("New " << logInfo());
 
+#if !MOBILEAPP
     if (PollWatchdog)
         PollWatchdog->addTime(&_watchdogTime, &_ownerThreadId);
+#endif
 }
 
 SocketPoll::~SocketPoll()
 {
     LOG_DBG("~" << logInfo());
 
+#if !MOBILEAPP
     if (PollWatchdog)
         PollWatchdog->removeTime(&_watchdogTime);
+#endif
 
     joinThread();
 
@@ -471,12 +492,16 @@ void SocketPoll::pollingThreadEntry()
 
 void SocketPoll::disableWatchdog()
 {
+#if !MOBILEAPP
     _watchdogTime = Watchdog::getDisableStamp();
+#endif
 }
 
 void SocketPoll::enableWatchdog()
 {
+#if !MOBILEAPP
     _watchdogTime = Watchdog::getTimestamp();
+#endif
 }
 
 int SocketPoll::poll(int64_t timeoutMaxMicroS, bool justPoll)
@@ -511,16 +536,16 @@ int SocketPoll::poll(int64_t timeoutMaxMicroS, bool justPoll)
         struct timespec timeout;
         timeout.tv_sec = timeoutMaxMicroS / (1000 * 1000);
         timeout.tv_nsec = (timeoutMaxMicroS % (1000 * 1000)) * 1000;
-        rc = ::ppoll(&_pollFds[0], size + 1, &timeout, nullptr);
+        rc = ::ppoll(_pollFds.data(), size + 1, &timeout, nullptr);
 #  else
         int timeoutMaxMs = (timeoutMaxMicroS + 999) / 1000;
         LOG_TRC("Legacy Poll start, timeoutMs: " << timeoutMaxMs);
-        rc = ::poll(&_pollFds[0], size + 1, std::max(timeoutMaxMs,0));
+        rc = ::poll(_pollFds.data(), size + 1, std::max(timeoutMaxMs,0));
 #  endif
 #else
         LOG_TRC("SocketPoll Poll");
         int timeoutMaxMs = (timeoutMaxMicroS + 999) / 1000;
-        rc = fakeSocketPoll(&_pollFds[0], size + 1, std::max(timeoutMaxMs,0));
+        rc = fakeSocketPoll(_pollFds.data(), size + 1, std::max(timeoutMaxMs,0));
 #endif
     }
     while (rc < 0 && errno == EINTR);
@@ -781,8 +806,11 @@ void SocketPoll::closeAllSockets()
     for (std::shared_ptr<Socket> &it : _pollSockets)
     {
         // first close the underlying socket
+#if !MOBILEAPP
         it->closeFD(*this);
-
+#else
+        fakeSocketClose(it->getFD());
+#endif
         // avoid the socketHandler' getting an onDisconnect
         auto stream = dynamic_cast<StreamSocket *>(it.get());
         if (stream)
@@ -1164,7 +1192,7 @@ bool ServerSocket::bind([[maybe_unused]] Type type, [[maybe_unused]] int port)
     const int reuseAddress = 1;
     constexpr unsigned int len = sizeof(reuseAddress);
     if (::setsockopt(getFD(), SOL_SOCKET, SO_REUSEADDR, &reuseAddress, len) == -1)
-        LOG_SYS("Failed setsockopt SO_REUSEADDR: " << strerror(errno));
+        LOG_SYS("Failed setsockopt SO_REUSEADDR on socket fd " << getFD() << ": " << strerror(errno));
 
     int rc;
 
@@ -1213,6 +1241,8 @@ bool ServerSocket::bind([[maybe_unused]] Type type, [[maybe_unused]] int port)
 #endif
 }
 
+#if !MOBILEAPP
+
 bool ServerSocket::isUnrecoverableAcceptError(const int cause)
 {
     constexpr const char * messagePrefix = "Failed to accept. (errno: ";
@@ -1250,6 +1280,8 @@ bool ServerSocket::isUnrecoverableAcceptError(const int cause)
     }
 }
 
+#endif
+
 std::shared_ptr<Socket> ServerSocket::accept()
 {
     // Accept a connection (if any) and set it to non-blocking.
@@ -1264,15 +1296,15 @@ std::shared_ptr<Socket> ServerSocket::accept()
     struct sockaddr_in6 clientInfo;
     socklen_t addrlen = sizeof(clientInfo);
     const int rc = ::accept4(getFD(), (struct sockaddr *)&clientInfo, &addrlen, SOCK_NONBLOCK | SOCK_CLOEXEC);
-#else
-    const int rc = fakeSocketAccept4(getFD());
-#endif
     if (rc < 0)
     {
         if (isUnrecoverableAcceptError(errno))
             Util::forcedExit(EX_SOFTWARE);
         return nullptr;
     }
+#else
+    const int rc = fakeSocketAccept4(getFD());
+#endif
     LOG_TRC("Accepted socket #" << rc << ", creating socket object.");
 
 #if !MOBILEAPP
@@ -1551,18 +1583,8 @@ bool StreamSocket::checkRemoval(std::chrono::steady_clock::time_point now)
         LOG_WRN("CheckRemoval: Timeout: {Inactive " << isInactive << ", Termination "
                                                     << isTermination << "}, " << getStatsString(now)
                                                     << ", " << *this);
-        if (_socketHandler)
-        {
-            _socketHandler->onDisconnect();
-            if (!isShutdown())
-            {
-                // Note: Ensure proper semantics of onDisconnect()
-                LOG_WRN("Socket still open post onDisconnect(), forced shutdown.");
-                shutdown(); // signal
-                shutdownConnection(); // real -> setShutdown()
-            }
-        }
-        else
+        ensureDisconnected();
+        if (!isShutdown())
         {
             shutdown(); // signal
             shutdownConnection(); // real -> setShutdown()
@@ -1577,7 +1599,7 @@ bool StreamSocket::checkRemoval(std::chrono::steady_clock::time_point now)
 
 #if !MOBILEAPP
 
-bool StreamSocket::parseHeader(const char* clientName, Poco::MemoryInputStream& message,
+bool StreamSocket::parseHeader(const std::string_view clientName, std::istream& message,
                                Poco::Net::HTTPRequest& request,
                                std::chrono::steady_clock::time_point lastHTTPHeader,
                                MessageMap& map)
@@ -1830,8 +1852,6 @@ bool StreamSocket::sniffSSL() const
             _inBuffer[5] == 0x01);  // Handshake: CLIENT_HELLO
 }
 
-#endif // !MOBILEAPP
-
 namespace {
     /// To make the protected 'computeAccept' accessible.
     class PublicComputeAccept final : public Poco::Net::WebSocket
@@ -1859,6 +1879,8 @@ std::string WebSocketHandler::generateKey()
 {
     return PublicComputeAccept::generateKey();
 }
+
+#endif // !MOBILEAPP
 
 // Required by Android and iOS apps.
 namespace http

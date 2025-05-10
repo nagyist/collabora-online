@@ -21,9 +21,9 @@ describe(['tagdesktop'], 'Notebookbar tests.', function() {
 		helper.setDummyClipboardForCopy();
 		cy.cGet('.notebookbar #Format-tab-label').click();
 		cy.cGet('.notebookbar .unoFormatMenu .unoarrow').click();
-		cy.cGet('#format-dropdown').should('exist');
-		cy.cGet('#format-dropdown #format-entry-0').click(); // Bold
-		cy.cGet('#format-dropdown').should('not.exist');
+		cy.cGet('#format-FormatMenu-dropdown').should('exist');
+		cy.cGet('#format-FormatMenu-dropdown #format-FormatMenu-entry-0').click(); // Bold
+		cy.cGet('#format-FormatMenu-dropdown').should('not.exist');
 		writerHelper.selectAllTextOfDoc();
 		helper.copy();
 		cy.cGet('#copy-paste-container p b').should('exist');
@@ -49,6 +49,7 @@ describe(['tagdesktop'], 'Notebookbar review operations.', function() {
 
 		// When going to the next redline:
 		cy.cGet('#Review-tab-label').click();
+		cy.cGet('.ui-scroll-right').click();
 		cy.cGet('#review-next-tracked-change-button').click();
 		cy.cGet('#Table-tab-label').should('not.have.class', 'hidden');
 

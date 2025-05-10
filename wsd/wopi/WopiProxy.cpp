@@ -68,14 +68,22 @@ void WopiProxy::handleRequest([[maybe_unused]] const std::shared_ptr<Terminating
         case StorageBase::StorageType::Unsupported:
             LOG_ERR("Unsupported URI [" << COOLWSD::anonymizeUrl(uriPublic.toString())
                                         << "] or no storage configured");
-            throw BadRequestException("No Storage configured or invalid URI " +
+            throw BadRequestException("No Storage configured or invalid URI [" +
                                       COOLWSD::anonymizeUrl(uriPublic.toString()) + ']');
-
             break;
+
         case StorageBase::StorageType::Unauthorized:
             LOG_ERR("No authorized hosts found matching the target host [" << uriPublic.getHost()
                                                                            << "] in config");
             HttpHelper::sendErrorAndShutdown(http::StatusCode::Unauthorized, socket);
+            break;
+
+        case StorageBase::StorageType::Conversion:
+            // We don't expect conversion requests.
+            LOG_ERR("Unsupported URI [" << COOLWSD::anonymizeUrl(uriPublic.toString())
+                                        << "] for conversion");
+            throw BadRequestException("Invalid URI for conversion [" +
+                                      COOLWSD::anonymizeUrl(uriPublic.toString()) + ']');
             break;
 
 #if ENABLE_LOCAL_FILESYSTEM

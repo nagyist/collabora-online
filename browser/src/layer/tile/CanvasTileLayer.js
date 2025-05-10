@@ -3,7 +3,7 @@
  * L.CanvasTileLayer is a layer with canvas based rendering.
  */
 
-/* global app L JSDialog CanvasSectionContainer GraphicSelection CanvasOverlay CDarkOverlay CSplitterLine CursorHeaderSection $ _ CPointSet CPolyUtil CPolygon Cursor CCellSelection PathGroupType UNOKey UNOModifier cool OtherViewCellCursorSection TileManager MultiPageViewLayout */
+/* global app L JSDialog CanvasSectionContainer GraphicSelection CanvasOverlay CDarkOverlay CursorHeaderSection $ _ CPointSet CPolyUtil CPolygon Cursor CCellSelection PathGroupType UNOKey UNOModifier cool OtherViewCellCursorSection TileManager MultiPageViewLayout SplitSection */
 
 function clamp(num, min, max)
 {
@@ -256,7 +256,7 @@ L.TileSectionManager = L.Class.extend({
 
 	// Debug tool. Splits are enabled for only Calc for now.
 	_addSplitsSection: function () {
-		const splitSection = new app.definitions.splitSection();
+		const splitSection = new SplitSection();
 		app.sectionContainer.addSection(splitSection);
 	},
 
@@ -1781,8 +1781,6 @@ L.CanvasTileLayer = L.Layer.extend({
 			let _cellCursorTwips = this._convertToTileTwipsSheetArea(new L.Bounds(topLeftTwips, bottomRightTwips));
 
 			app.calc.cellAddress = new app.definitions.simplePoint(parseInt(strTwips[4]), parseInt(strTwips[5]));
-			app.calc.cellCursorTopLeftTwips = topLeftTwips;
-			app.calc.cellCursorOffset = offset;
 			let tempRectangle = _cellCursorTwips.toRectangle();
 			app.calc.cellCursorRectangle = new app.definitions.simpleRectangle(tempRectangle[0], tempRectangle[1], tempRectangle[2], tempRectangle[3]);
 			this._cellCursorSection.size[0] = app.calc.cellCursorRectangle.pWidth;
@@ -2190,43 +2188,6 @@ L.CanvasTileLayer = L.Layer.extend({
 		this._searchResults = null;
 		this._searchTerm = null;
 		this._searchResultsLayer.clearLayers();
-	},
-
-	_drawSearchResults: function() {
-		if (!this._searchResults) {
-			return;
-		}
-		this._searchResultsLayer.clearLayers();
-		for (var k = 0; k < this._searchResults.length; k++)
-		{
-			var result = this._searchResults[k];
-			if (result.part === this._selectedPart)
-			{
-				var _fillColor = '#CCCCCC';
-				var strTwips = result.twipsRectangles.match(/\d+/g);
-
-				if (!strTwips || !strTwips.length)
-					continue;
-
-				var rectangles = [];
-				for (var i = 0; i < strTwips.length; i += 4) {
-					var topLeftTwips = new L.Point(parseInt(strTwips[i]), parseInt(strTwips[i + 1]));
-					var offset = new L.Point(parseInt(strTwips[i + 2]), parseInt(strTwips[i + 3]));
-					var topRightTwips = topLeftTwips.add(new L.Point(offset.x, 0));
-					var bottomLeftTwips = topLeftTwips.add(new L.Point(0, offset.y));
-					var bottomRightTwips = topLeftTwips.add(offset);
-					rectangles.push([bottomLeftTwips, bottomRightTwips, topLeftTwips, topRightTwips]);
-				}
-				var polygons = L.PolyUtil.rectanglesToPolygons(rectangles, this);
-				var selection = new L.Polygon(polygons, {
-					pointerEvents: 'none',
-					fillColor: _fillColor,
-					fillOpacity: 0.25,
-					weight: 2,
-					opacity: 0.25});
-				this._searchResultsLayer.addLayer(selection);
-			}
-		}
 	},
 
 	_onStateChangedMsg: function (textMsg) {
@@ -3680,6 +3641,10 @@ L.CanvasTileLayer = L.Layer.extend({
 	},
 
 	_syncTilePanePos: function () {
+		if (this._container) {
+			var mapPanePos = this._map._getMapPanePos();
+			L.DomUtil.setPosition(this._container, new L.Point(-mapPanePos.x , -mapPanePos.y));
+		}
 		var documentBounds = this._map.getPixelBoundsCore();
 		var documentPos = documentBounds.min;
 		var documentEndPos = documentBounds.max;
@@ -3963,8 +3928,6 @@ L.CanvasTileLayer = L.Layer.extend({
 	},
 
 	onRemove: function (map) {
-		this._painter.dispose();
-
 		L.DomUtil.remove(this._container);
 		map._removeZoomLimit(this);
 		this._container = null;
@@ -4292,52 +4255,6 @@ L.CanvasTileLayer = L.Layer.extend({
 		var topLeft = new L.Point(coords.x, coords.y);
 		var bottomRight = topLeft.add(new L.Point(TileManager.tileSize, TileManager.tileSize));
 		return new L.Bounds(topLeft, bottomRight);
-	},
-
-	updateHorizPaneSplitter: function () {
-
-		var map = this._map;
-
-		if (!this._xSplitter) {
-			this._xSplitter = new CSplitterLine(
-				map, {
-					name: 'horiz-pane-splitter',
-					fillColor: this._splittersStyleData.getPropValue('color'),
-					fillOpacity: this._splittersStyleData.getFloatPropValue('opacity'),
-					thickness: Math.round(
-						this._splittersStyleData.getFloatPropWithoutUnit('border-top-width')
-						* app.dpiScale),
-					isHoriz: true
-				});
-
-			this._canvasOverlay.initPath(this._xSplitter);
-		}
-		else {
-			this._xSplitter.onPositionChange();
-		}
-	},
-
-	updateVertPaneSplitter: function () {
-
-		var map = this._map;
-
-		if (!this._ySplitter) {
-			this._ySplitter = new CSplitterLine(
-				map, {
-					name: 'vert-pane-splitter',
-					fillColor: this._splittersStyleData.getPropValue('color'),
-					fillOpacity: this._splittersStyleData.getFloatPropValue('opacity'),
-					thickness: Math.round(
-						this._splittersStyleData.getFloatPropWithoutUnit('border-top-width')
-						* app.dpiScale),
-					isHoriz: false
-				});
-
-			this._canvasOverlay.initPath(this._ySplitter);
-		}
-		else {
-			this._ySplitter.onPositionChange();
-		}
 	},
 
 	hasXSplitter: function () {

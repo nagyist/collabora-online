@@ -102,7 +102,10 @@ class NavigatorPanel extends SidebarBase {
 			'close-navigation-button',
 			closeNavWrapper,
 		);
-		this.closeNavButton.setAttribute('aria-label', _('Close Navigation'));
+		const closeNavigationText = _('Close Navigation');
+		this.closeNavButton.setAttribute('aria-label', closeNavigationText);
+		this.closeNavButton.setAttribute('data-cooltip', closeNavigationText);
+		L.control.attachTooltipEventListener(this.closeNavButton, this.map);
 		this.closeNavButton.setAttribute('tabindex', '0');
 
 		this.closeNavButton.addEventListener(
@@ -153,6 +156,7 @@ class NavigatorPanel extends SidebarBase {
 			'notebookbar unoNavigator unospan-view-navigator unotoolbutton visible';
 		this.floatingNavIcon.setAttribute('tabindex', '-1');
 		this.floatingNavIcon.setAttribute('data-cooltip', _('Navigator'));
+		L.control.attachTooltipEventListener(this.floatingNavIcon, this.map);
 
 		// Create the button wrapper (square container)
 		const buttonWrapper = document.createElement('div');

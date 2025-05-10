@@ -6,11 +6,6 @@ warning_flags = -Wall -Werror -Wno-parentheses -Wno-sign-compare -Wno-unused-var
 define_flags = -DMOBILEAPP=1
 
 AM_CPPFLAGS = -pthread \
-              -DCOOLWSD_DATADIR='"@COOLWSD_DATADIR@"' \
-              -DCOOLWSD_CONFIGDIR='"@COOLWSD_CONFIGDIR@"' \
-              -DCOOLWSD_LOGLEVEL='"@COOLWSD_LOGLEVEL@"' \
-              -DDEBUG_ABSSRCDIR='"'$(realpath ${top_srcdir})'"' \
-              -DNUM_PRESPAWN_CHILDREN='"@NUM_PRESPAWN_CHILDREN@"' \
               -DTOPSRCDIR='"'$(realpath ${top_srcdir})'"' \
               -DGTKAPP \
               ${define_flags} \
@@ -28,17 +23,21 @@ cmake_list= \
             ../common/CommandControl.cpp \
             ../common/Crypto-stub.cpp \
             ../common/FileUtil.cpp \
+            ../common/FileUtil-unix.cpp \
             ../common/Log.cpp \
             ../common/TraceEvent.cpp \
             ../common/Protocol.cpp \
             ../common/Simd.cpp \
             ../common/StringVector.cpp \
             ../common/Session.cpp \
-            ../common/SigUtil.cpp \
+            ../common/SigUtil-mobile.cpp \
             ../common/SpookyV2.cpp \
             ../common/Unit.cpp \
+            ../common/Unit-mobile.cpp \
             ../common/Util.cpp \
             ../common/Util-mobile.cpp \
+            ../common/Util-unix.cpp \
+            ../common/Uri.cpp \
             ../kit/ChildSession.cpp \
             ../kit/DeltaSimd.c \
             ../kit/Kit.cpp \

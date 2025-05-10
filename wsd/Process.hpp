@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include <common/FileUtil.hpp>
 #include <net/WebSocketHandler.hpp>
 
 #include <atomic>
@@ -240,8 +241,14 @@ public:
     std::shared_ptr<DocumentBroker> getDocumentBroker() const { return _docBroker.lock(); }
     const std::string& getJailId() const { return _jailId; }
     const std::string& getConfigId() const { return _configId; }
+#if !MOBILEAPP
     void setSMapsFD(int smapsFD)
     {
+        if (smapsFD < 0)
+        {
+            _smapsFp.reset();
+            return;
+        }
         _smapsFp = std::shared_ptr<FILE>(fdopen(smapsFD, "r"), [](FILE* p) {
             if (!p)
                 return;
@@ -250,10 +257,11 @@ public:
         if (!_smapsFp)
         {
             LOG_ERR("Error while fdopen smaps fd");
-            ::close(smapsFD);
+            FileUtil::closeFD(smapsFD);
         }
     }
     std::weak_ptr<FILE> getSMapsFp() const { return _smapsFp; }
+#endif
 
     void moveSocketFromTo(const std::shared_ptr<SocketPoll>& from,
                           const std::shared_ptr<SocketPoll>& to)

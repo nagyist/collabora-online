@@ -11,12 +11,14 @@
 
 #pragma once
 
+#if !MOBILEAPP
 #include <poll.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#endif
 
 #include <atomic>
 #include <cassert>
@@ -164,15 +166,12 @@ public:
             return;
 
         // Doesn't block on sockets; no error handling needed.
-        if constexpr (!Util::isMobileApp())
-        {
-            ::close(_fd);
-            LOG_DBG("Closed socket " << toStringImpl());
-        }
-        else
-        {
-            fakeSocketClose(_fd);
-        }
+#if !MOBILEAPP
+        ::close(_fd);
+        LOG_DBG("Closed socket " << toStringImpl());
+#else
+        fakeSocketClose(_fd);
+#endif
     }
 
     /// Returns true if this socket FD has been shutdown, but not necessarily closed.
@@ -224,11 +223,15 @@ public:
         if (!_noShutdown)
         {
             LOG_TRC("Socket shutdown RDWR. " << *this);
-            setShutdown();
-            if constexpr (!Util::isMobileApp())
+            if (!_isShutdown)
+            {
+                setShutdown();
+#if !MOBILEAPP
                 ::shutdown(_fd, SHUT_RDWR);
-            else
+#else
                 fakeSocketShutdown(_fd);
+#endif
+            }
         }
     }
 
@@ -249,6 +252,7 @@ public:
     /// Returns the total capacity of all data buffers.
     virtual std::size_t totalBufferCapacity() const { return 0; }
 
+#if !MOBILEAPP
     /// manage latency issues around packet aggregation
     void setNoDelay()
     {
@@ -269,10 +273,10 @@ public:
         }
     }
 
-#if !MOBILEAPP
     /// Uses peercreds to get prisoner PID if present or -1
     int getPid() const;
-#endif
+
+#endif // !MOBILEAPP
 
     /// Sets the kernel socket send buffer in size bytes.
     /// Note: TCP will allocate twice this size for admin purposes,
@@ -283,46 +287,44 @@ public:
     /// Returns true on success only.
     bool setSocketBufferSize(const int size)
     {
-        if constexpr (!Util::isMobileApp())
+#if !MOBILEAPP
+        int rc = ::setsockopt(_fd, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size));
+
+        _sendBufferSize = getSocketBufferSize();
+        if (rc != 0 || _sendBufferSize < 0)
         {
-            int rc = ::setsockopt(_fd, SOL_SOCKET, SO_SNDBUF, &size, sizeof(size));
-
-            _sendBufferSize = getSocketBufferSize();
-            if (rc != 0 || _sendBufferSize < 0)
-            {
-                _sendBufferSize = DefaultSendBufferSize;
-                LOG_SYS("Error getting socket buffer size. Using default size of "
-                        << _sendBufferSize << " bytes.");
-                return false;
-            }
-
-            if (_sendBufferSize > MaximumSendBufferSize * 2)
-            {
-                LOG_TRC("Clamped send buffer size to " << MaximumSendBufferSize << " from "
-                                                       << _sendBufferSize);
-                _sendBufferSize = MaximumSendBufferSize;
-            }
-            else
-                LOG_TRC("Set socket buffer size to " << _sendBufferSize);
-
-            return true;
+            _sendBufferSize = DefaultSendBufferSize;
+            LOG_SYS("Error getting socket buffer size. Using default size of "
+                    << _sendBufferSize << " bytes.");
+            return false;
         }
 
+        if (_sendBufferSize > MaximumSendBufferSize * 2)
+        {
+            LOG_TRC("Clamped send buffer size to " << MaximumSendBufferSize << " from "
+                                                   << _sendBufferSize);
+            _sendBufferSize = MaximumSendBufferSize;
+        }
+        else
+            LOG_TRC("Set socket buffer size to " << _sendBufferSize);
+
+        return true;
+#else
         return false;
+#endif
     }
 
     /// Gets the actual send buffer size in bytes, -1 for failure.
     int getSocketBufferSize() const
     {
-        if constexpr (!Util::isMobileApp())
-        {
-            int size;
-            socklen_t len = sizeof(size);
-            const int rc = ::getsockopt(_fd, SOL_SOCKET, SO_SNDBUF, &size, &len);
-            return rc == 0 ? size : -1;
-        }
-
+#if !MOBILEAPP
+        int size;
+        socklen_t len = sizeof(size);
+        const int rc = ::getsockopt(_fd, SOL_SOCKET, SO_SNDBUF, &size, &len);
+        return rc == 0 ? size : -1;
+#else
         return -1;
+#endif
     }
 
     /// Gets our fast cache of the socket buffer size
@@ -399,7 +401,11 @@ public:
     // close in advance of the ctor
     void closeFD(const SocketPoll& /*rPoll*/)
     {
+#if !MOBILEAPP
         ::close(_fd);
+#else
+        fakeSocketClose(_fd);
+#endif
         // Invalidate the FD by negating to preserve the original value.
         if (_fd > 0)
             _fd = -_fd;
@@ -471,8 +477,10 @@ private:
 
     void init()
     {
+#if !MOBILEAPP
         if (_type != Type::Unix && _fd >= 0)
             setNoDelay();
+#endif
         _ignoreInput = false;
         _noShutdown = false;
         _sendBufferSize = DefaultSendBufferSize;
@@ -890,10 +898,11 @@ public:
         // wakeup the main-loop.
         int rc;
         do {
-            if constexpr (!Util::isMobileApp())
-                rc = ::write(fd, "w", 1);
-            else
-                rc = fakeSocketWrite(fd, "w", 1);
+#if !MOBILEAPP
+            rc = ::write(fd, "w", 1);
+#else
+            rc = fakeSocketWrite(fd, "w", 1);
+#endif
         } while (rc == -1 && errno == EINTR);
 
         if (rc == -1 && errno != EAGAIN && errno != EWOULDBLOCK)
@@ -1165,7 +1174,9 @@ private:
     std::thread::id _owner;
     /// Flag the thread to stop.
     std::atomic<int64_t> _threadStarted;
+#if !MOBILEAPP
     std::atomic<uint64_t> _watchdogTime;
+#endif
 
     /// Time-stamp for profiling
     int _ownerThreadId;
@@ -1210,6 +1221,7 @@ public:
         , _readType(readType)
         , _shutdownSignalled(false)
         , _inputProcessingEnabled(true)
+        , _doneDisconnect(false)
         , _isClient(isClient)
         , _isLocalHost(hostType == LocalHost)
         , _sentHTTPContinue(false)
@@ -1223,14 +1235,8 @@ public:
     {
         LOG_TRC("StreamSocket dtor called with pending write: " << _outBuffer.size()
                                                                 << ", read: " << _inBuffer.size());
-
-        if (!isShutdown())
-        {
-            ASSERT_CORRECT_SOCKET_THREAD(this);
-            if (_socketHandler)
-                _socketHandler->onDisconnect();
-            _socketHandler.reset();
-        }
+        ensureDisconnected();
+        _socketHandler.reset();
 
         if (!_shutdownSignalled)
         {
@@ -1239,6 +1245,23 @@ public:
         }
         if (isExternalCountedConnection())
             --ExternalConnectionCount;
+    }
+
+    /// Emit 'onDisconnect' if it has not been done
+    void ensureDisconnected()
+    {
+        ASSERT_CORRECT_SOCKET_THREAD(this);
+        if (!_doneDisconnect)
+        {
+            _doneDisconnect = true;
+            if (_socketHandler)
+                _socketHandler->onDisconnect();
+        }
+        if (!isShutdown())
+        {
+            // Note: Ensure proper semantics of onDisconnect()
+            LOG_WRN("Socket still open post onDisconnect(), forced shutdown.");
+        }
     }
 
     bool isWebSocket() const { return _wsState == WSState::WS; }
@@ -1337,6 +1360,8 @@ public:
             writeOutgoingData();
     }
 
+#if !MOBILEAPP
+
     /// Sends data with file descriptor as control data.
     /// Can be used only with Unix sockets.
     void sendFDs(const char* data, const uint64_t len, const std::vector<int>& fds)
@@ -1385,6 +1410,7 @@ public:
         else
             LOG_TRC("Wrote " << wrote << " bytes of " << len);
     }
+#endif // !MOBILEAPP
 
     /// Reads data by invoking readData() and buffering.
     /// Returns the last return from writeData. 0 implies socket is closed.
@@ -1491,11 +1517,13 @@ public:
     void setHandler(std::shared_ptr<ProtocolHandlerInterface> handler)
     {
         LOG_TRC("setHandler");
+        resetHandler(); // don't disconnect the pre-upgrade handler
         _socketHandler = std::move(handler);
         ProtocolThreadOwnerChange::setThreadOwner(*_socketHandler, getThreadOwner());
         _socketHandler->onConnect(shared_from_this());
     }
 
+    /// Explicitly avoids onDisconnect
     void resetHandler()
     {
         LOG_TRC("resetHandler");
@@ -1558,7 +1586,7 @@ public:
 
     /// Detects if we have an HTTP header in the provided message and
     /// populates a request for that.
-    bool parseHeader(const char* clientLoggingName, Poco::MemoryInputStream& message,
+    bool parseHeader(const std::string_view clientName, std::istream& message,
                      Poco::Net::HTTPRequest& request,
                      std::chrono::steady_clock::time_point lastHTTPHeader, MessageMap& map);
 
@@ -1738,7 +1766,7 @@ public:
         if (closed)
         {
             LOG_TRC("Closed. Firing onDisconnect.");
-            _socketHandler->onDisconnect();
+            ensureDisconnected();
             setShutdown();
             disposition.setClosed();
         }
@@ -1821,6 +1849,7 @@ protected:
             _socketHandler->onHandshakeFail();
     }
 
+#if !MOBILEAPP
     /// Reads data with file descriptors as control data if received.
     /// Can be used only with Unix sockets.
     int readFDs(char* buf, int len, std::vector<int>& fds)
@@ -1864,6 +1893,7 @@ protected:
 
         return ret;
     }
+#endif // !MOBILEAPP
 
     /// Override to handle reading of socket data differently.
     virtual int readData(char* buf, int len)
@@ -1957,6 +1987,9 @@ private:
     /// It's accessed from different threads.
     std::atomic_bool _shutdownSignalled;
     std::atomic_bool _inputProcessingEnabled;
+
+    /// Did we emit the onDisconnect event yet
+    bool _doneDisconnect;
 
     /// True if owner is in client role, otherwise false (server)
     bool _isClient:1;

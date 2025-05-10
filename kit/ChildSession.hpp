@@ -40,15 +40,15 @@ struct LogUiCommandsLine {
 
 class LogUiCommands {
 public:
-    ChildSession* _session;
+    ChildSession& _session;
     int _lastUndoCount = 0;
     const StringVector* _tokens;
-    bool _skipDestructor = false;
-    LogUiCommands(ChildSession* session, const StringVector* tokens) : _session(session),_tokens(tokens) {}
-    LogUiCommands(ChildSession* session) : _session(session),_tokens(nullptr),_skipDestructor(true) {}
+    LogUiCommands(ChildSession& session, const StringVector* tokens);
+    LogUiCommands(ChildSession& session) : _session(session),_tokens(nullptr) {}
     ~LogUiCommands();
     void logSaveLoad(std::string cmd, const std::string & path, std::chrono::steady_clock::time_point timeStart);
 private:
+    std::weak_ptr<lok::Document> _document;
     // list the commands to log here.
     std::set<std::string> _cmdToLog = {
         "uno", "key", "mouse", "textinput", "removetextcontext",
@@ -64,6 +64,8 @@ enum class LokEventTargetEnum
     Document,
     Window
 };
+
+class SlideCompressor;
 
 /// Represents a session to the WSD process, in a Kit process. Note that this is not a singleton.
 class ChildSession final : public Session
@@ -194,8 +196,9 @@ private:
     bool unoSignatureCommand(const std::string& commandName);
     bool selectText(const StringVector& tokens, LokEventTargetEnum target);
     bool selectGraphic(const StringVector& tokens);
-    bool renderNextSlideLayer(unsigned width, unsigned height, double dDevicePixelRatio,
-                              bool& done);
+    bool renderNextSlideLayer(SlideCompressor &scomp,
+                              unsigned width, unsigned height,
+                              double dDevicePixelRatio, bool& done);
     bool renderSlide(const StringVector& tokens);
     bool renderWindow(const StringVector& tokens);
     bool resizeWindow(const StringVector& tokens);

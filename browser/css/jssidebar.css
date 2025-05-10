@@ -285,6 +285,17 @@ button#button2.ui-pushbutton.jsdialog.sidebar {
 	display: none;
 }
 
+.unoChartColorPalette.unotoolbutton > .unobutton {
+	width: calc(3*var(--btn-size));
+	height: calc(2*var(--btn-size));
+}
+
+.unoChartColorPalette.unotoolbutton > .unobutton img {
+	width: calc(3*var(--btn-img-size));
+	height: calc(2*var(--btn-img-size));
+}
+
+
 /* not available commands*/
 
 .sidebar #orientationcontrol,
@@ -299,6 +310,11 @@ button#button2.ui-pushbutton.jsdialog.sidebar {
 	height: 0;
 }
 
+/* https://github.com/CollaboraOnline/online/issues/11868 */
+/* To do: to solve it on core side */
+#box4 > [id^='hyphenation'] {
+	display: none !important;
+}
 
 /* Navigator */
 
@@ -344,7 +360,7 @@ button#button2.ui-pushbutton.jsdialog.sidebar {
 }
 #NavigatorPanel .ui-treeview-cell-text {
 	/* good to move this into css var*/
-	font-size: 14px;
+	font-size: 0.875rem;
 	white-space: break-spaces;
 }
 
@@ -434,6 +450,10 @@ span.jsdialog.sidebar.ui-treeview-notexpandable {
 	box-sizing: border-box;
 }
 
+.navigator-container .ui-treeview-placeholder {
+	padding: 16px;
+}
+
 .navigation-title {
 	font-weight: bold;
 }
@@ -471,7 +491,7 @@ span.jsdialog.sidebar.ui-treeview-notexpandable {
 	flex: 1;
 	padding: 10px;
 	cursor: pointer;
-	font-size: 14px;
+	font-size: 0.875rem;
 	border-bottom: none;
 	color: var(--color-main-text);
 	transition: background-color 0.3s, border-color 0.3s;
@@ -552,7 +572,7 @@ span.jsdialog.sidebar.ui-treeview-notexpandable {
 /* required to dynamically resize treeviews or lists inside sidebar */
 .sidebar-container, .navigator-container
 .sidebar-container > .root-container.jsdialog.sidebar,.navigator-container > .root-container.jsdialog.sidebar > .root-container.jsdialog.sidebar
-.sidebar-container > .root-container.jsdialog.sidebar > .vertical.jsdialog.sidebar , .navigator-container > .root-container.jsdialog.sidebar > .vertical.jsdialog.sidebar{
+.sidebar-container > .root-container.jsdialog.sidebar > .vertical.jsdialog.sidebar , .navigator-container > .root-container.jsdialog.sidebar > .vertical.jsdialog.sidebar {
 	height: 100%;
 }
 

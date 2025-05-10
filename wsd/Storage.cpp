@@ -31,6 +31,7 @@
 #endif
 
 #include <Poco/StreamCopier.h>
+#include <Poco/Path.h>
 #include <Poco/URI.h>
 
 #include <CommandControl.hpp>
@@ -45,6 +46,7 @@
 #include <common/FileUtil.hpp>
 #include <common/JsonUtil.hpp>
 #include <common/TraceEvent.hpp>
+#include <wsd/COOLWSD.hpp>
 
 #ifdef IOS
 #include <ios.h>
@@ -152,8 +154,24 @@ StorageBase::StorageType StorageBase::validate(const Poco::URI& uri,
         }
 #endif
 
+        if (takeOwnership)
+        {
+            LOG_DBG("Validated URI [" << COOLWSD::anonymizeUrl(uri.toString())
+                                      << "] as Conversion");
+            // Normalize the path.
+            Poco::Path path = Poco::Path(uri.getPath());
+            if (!path.isAbsolute() || !path.isFile() ||
+                !path.makeAbsolute().toString().starts_with(COOLWSD::ChildRoot))
+            {
+                LOG_ERR("Invalid path to document to convert [" << uri.toString() << ']');
+                return StorageBase::StorageType::Unsupported;
+            }
+
+            return StorageBase::StorageType::Conversion;
+        }
+
 #if ENABLE_LOCAL_FILESYSTEM
-        if (FilesystemEnabled || takeOwnership)
+        if (FilesystemEnabled)
         {
             LOG_DBG("Validated URI [" << COOLWSD::anonymizeUrl(uri.toString())
                                       << "] as FileSystem");
@@ -234,6 +252,10 @@ std::unique_ptr<StorageBase> StorageBase::create(const Poco::URI& uri, const std
                 "] in config");
             break;
 
+        case StorageBase::StorageType::Conversion:
+            return std::make_unique<LocalStorage>(uri, jailRoot, jailPath, /*takeOwnership=*/true);
+            break;
+
 #if ENABLE_LOCAL_FILESYSTEM
         case StorageBase::StorageType::FileSystem:
             return std::make_unique<LocalStorage>(uri, jailRoot, jailPath, takeOwnership);
@@ -250,8 +272,6 @@ std::unique_ptr<StorageBase> StorageBase::create(const Poco::URI& uri, const std
     throw BadRequestException("No Storage configured or invalid URI " +
                               COOLWSD::anonymizeUrl(uri.toString()) + ']');
 }
-
-#if ENABLE_LOCAL_FILESYSTEM
 
 std::atomic<unsigned> LocalStorage::LastLocalStorageId;
 
@@ -397,7 +417,7 @@ std::size_t LocalStorage::uploadLocalFileToStorageAsync(
         if (_isCopy && Poco::File(getRootFilePathUploading()).exists())
             FileUtil::copyFileTo(getRootFilePathUploading(), path);
 
-        const FileUtil::Stat stat(std::move(path));
+        const FileUtil::Stat stat(path); // Don't move 'path' as it's used in the catch.
         size = stat.size();
 
         // update its fileinfo object. This is used later to check if someone else changed the
@@ -420,8 +440,6 @@ std::size_t LocalStorage::uploadLocalFileToStorageAsync(
 
     return size;
 }
-
-#endif // ENABLE_LOCAL_FILESYSTEM
 
 void LockContext::initSupportsLocks()
 {

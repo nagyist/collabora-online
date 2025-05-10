@@ -18,22 +18,31 @@
 #include <common/Anonymizer.hpp>
 
 #include <csignal>
-#include <dlfcn.h>
 #include <limits>
+
+#if !MOBILEAPP
+#include <dlfcn.h>
+#endif
+
 #ifdef __linux__
 #include <ftw.h>
 #include <sys/vfs.h>
 #include <linux/magic.h>
-#include <sys/capability.h>
 #include <sys/sysmacros.h>
 #endif
-#ifdef __FreeBSD__
+
+#if HAVE_LIBCAP
+#include <sys/capability.h>
+#endif
+
+#if defined(__FreeBSD__)
 #include <ftw.h>
 #define FTW_CONTINUE 0
 #define FTW_STOP (-1)
 #define FTW_SKIP_SUBTREE 0
 #define FTW_ACTIONRETVAL 0
 #endif
+
 #include <unistd.h>
 #include <utime.h>
 #include <sys/time.h>
@@ -54,6 +63,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <utility>
 
 #define LOK_USE_UNSTABLE_API
 #include <LibreOfficeKit/LibreOfficeKitInit.h>
@@ -66,7 +76,6 @@
 #include <Common.hpp>
 #include <MobileApp.hpp>
 #include <FileUtil.hpp>
-#include <common/JailUtil.hpp>
 #include <common/JsonUtil.hpp>
 #include "KitHelper.hpp"
 #include "Kit.hpp"
@@ -81,15 +90,15 @@
 #include "RenderTiles.hpp"
 #include "KitWebSocket.hpp"
 #include <common/ConfigUtil.hpp>
-#include <common/TraceEvent.hpp>
-#include <common/Watchdog.hpp>
 #include <common/Uri.hpp>
 
 #if !MOBILEAPP
+#include <common/JailUtil.hpp>
 #include <common/security.h>
-#include <common/SigUtil.hpp>
 #include <common/Seccomp.hpp>
-#include <utility>
+#include <common/SigUtil.hpp>
+#include <common/TraceEvent.hpp>
+#include <common/Watchdog.hpp>
 #endif
 
 #if MOBILEAPP
@@ -177,6 +186,7 @@ bool pushToMainThread(LibreOfficeKitCallback cb, int type, const char *p, void *
 [[maybe_unused]]
 static LokHookFunction2* initFunction = nullptr;
 
+#if !MOBILEAPP
 class BackgroundSaveWatchdog
 {
 public:
@@ -246,6 +256,8 @@ void Document::shutdownBackgroundWatchdog()
     if (BgSaveWatchdog)
         BgSaveWatchdog->complete();
 }
+
+#endif
 
 namespace
 {
@@ -572,7 +584,7 @@ namespace
         return FTW_CONTINUE;
     }
 
-    void linkOrCopy(std::string source, const Poco::Path& destination, const std::string& linkable,
+    void linkOrCopy(const std::string& source, const Poco::Path& destination, const std::string& linkable,
                     LinkOrCopyType type)
     {
         std::string resolved = FileUtil::realpath(source);
@@ -580,14 +592,13 @@ namespace
         {
             LOG_DBG("linkOrCopy: Using real path [" << resolved << "] instead of original link ["
                                                     << source << "].");
-            source = std::move(resolved);
         }
 
-        LOG_INF("linkOrCopy " << linkOrCopyTypeString(type) << " from [" << source << "] to ["
+        LOG_INF("linkOrCopy " << linkOrCopyTypeString(type) << " from [" << resolved << "] to ["
                               << destination.toString() << "].");
 
         linkOrCopyType = type;
-        sourceForLinkOrCopy = source;
+        sourceForLinkOrCopy = resolved;
         if (sourceForLinkOrCopy.back() == '/')
             sourceForLinkOrCopy.pop_back();
         destinationForLinkOrCopy = destination;
@@ -596,9 +607,9 @@ namespace
         linkOrCopyStartTime = std::chrono::steady_clock::now();
         forceInitialCopy = detectSlowStackingFileSystem(destination.toString());
 
-        if (nftw(source.c_str(), linkOrCopyFunction, 10, FTW_ACTIONRETVAL|FTW_PHYS) == -1)
+        if (nftw(resolved.c_str(), linkOrCopyFunction, 10, FTW_ACTIONRETVAL|FTW_PHYS) == -1)
         {
-            LOG_ERR("linkOrCopy: nftw() failed for '" << source << '\'');
+            LOG_ERR("linkOrCopy: nftw() failed for '" << resolved << '\'');
         }
 
         if (linkOrCopyVerboseLogging)
@@ -608,7 +619,7 @@ namespace
                 std::chrono::steady_clock::now() - linkOrCopyStartTime).count();
             const double seconds = (ms + 1) / 1000.; // At least 1ms to avoid div-by-zero.
             const auto rate = linkOrCopyFileCount / seconds;
-            LOG_INF("Linking/Copying of " << linkOrCopyFileCount << " files from " << source
+            LOG_INF("Linking/Copying of " << linkOrCopyFileCount << " files from " << resolved
                                           << " to " << destinationForLinkOrCopy.toString()
                                           << " finished in " << seconds << " seconds, or " << rate
                                           << " files / second.");
@@ -715,7 +726,7 @@ namespace
     }
 #endif
 
-#ifndef __FreeBSD__
+#if HAVE_LIBCAP
     void dropCapability(cap_value_t capability)
     {
         cap_t caps;
@@ -920,11 +931,13 @@ std::size_t Document::purgeSessions()
         }
 
         num_sessions = _sessions.size();
-        if (!Util::isMobileApp() && num_sessions == 0)
+#if !MOBILEAPP
+        if (num_sessions == 0)
         {
             LOG_FTL("Document [" << anonymizeUrl(_url) << "] has no more views, exiting bluntly.");
             flushAndExit(EX_OK);
         }
+#endif
     }
 
     if (deadSessions.size() > 0 )
@@ -1138,9 +1151,11 @@ void Document::trimAfterInactivity()
             if (session && !session->isCloseFrame())
             {
                 session->loKitCallback(type, payload);
-                if (self->isLoadOngoing())
+                if (self->isLoadOngoing() && !self->processInputEnabled())
+                {
                     LOG_DBG("Enable processing input due to event of " << type << " during load");
-                session->getProtocol()->enableProcessInput(true);
+                    session->getProtocol()->enableProcessInput(true);
+                }
                 return;
             }
         }
@@ -1353,9 +1368,10 @@ bool Document::joinThreads()
     if (!getLOKit()->joinThreads())
         return false;
 
+#if !MOBILEAPP
     if (SocketPoll::PollWatchdog)
         SocketPoll::PollWatchdog->joinThread();
-
+#endif
     _deltaPool.stop();
     return true;
 }
@@ -1367,14 +1383,17 @@ void Document::startThreads()
 
     getLOKit()->startThreads();
 
+#if !MOBILEAPP
     if (SocketPoll::PollWatchdog)
         SocketPoll::PollWatchdog->startThread();
+#endif
 }
 
 void Document::handleSaveMessage(const std::string &)
 {
     LOG_TRC("Check save message");
 
+#if !MOBILEAPP
     // if a bgsave process - now we can clean up.
     if (_isBgSaveProcess)
     {
@@ -1413,7 +1432,10 @@ void Document::handleSaveMessage(const std::string &)
 
         // Next step in the chain is BgSaveChildWebSocketHandler::onDisconnect
     }
+#endif
 }
+
+#if !MOBILEAPP
 
 // need to hold a reference on session in case it exits during async save
 bool Document::forkToSave(const std::function<void()>& childSave, int viewId)
@@ -1524,8 +1546,10 @@ bool Document::forkToSave(const std::function<void()>& childSave, int viewId)
 
         Util::sleepFromEnvIfSet("KitBackgroundSave", "SLEEPBACKGROUNDFORDEBUGGER");
 
+#if !MOBILEAPP
         assert(!BgSaveWatchdog && "Unexpected to have BackgroundSaveWatchdog instance");
         BgSaveWatchdog = std::make_unique<BackgroundSaveWatchdog>(_mobileAppDocId, Util::getThreadId());
+#endif
 
         UnitKit::get().postBackgroundSaveFork();
 
@@ -1613,6 +1637,8 @@ void Document::reapZombieChildren()
         }
     }
 }
+
+#endif
 
 namespace
 {
@@ -2663,7 +2689,7 @@ void Document::flushAndExit(int code)
 void Document::dumpState(std::ostream& oss)
 {
     oss << "Kit Document:\n"
-        << "\n\tpid: " << getpid()
+        << "\n\tpid: " << Util::getProcessId()
         << "\n\tstop: " << _stop
         << "\n\tjailId: " << _jailId
         << "\n\tdocKey: " << _docKey
@@ -3618,7 +3644,7 @@ void lokit_main(
                 Util::forcedExit(EX_SOFTWARE);
             }
 
-#ifndef __FreeBSD__
+#if HAVE_LIBCAP
             if (usingMountNamespace)
             {
                 // We have a full set of capabilities in the namespace so drop
@@ -3632,10 +3658,11 @@ void lokit_main(
                 dropCapability(CAP_FOWNER);
                 dropCapability(CAP_CHOWN);
             }
-#endif
+
             char *capText = cap_to_text(cap_get_proc(), nullptr);
             LOG_DBG("Initialized jail nodes, dropped caps. Final caps are: " << capText);
             cap_free(capText);
+#endif
         }
         else // noCapabilities set
         {
@@ -3995,6 +4022,8 @@ std::string anonymizeUrl(const std::string& url)
 #endif
 }
 
+#if !MOBILEAPP
+
 static int receiveURPData(void* context, const signed char* buffer, size_t bytesToWrite)
 {
     const signed char *ptr = buffer;
@@ -4062,8 +4091,6 @@ bool startURP(const std::shared_ptr<lok::Office>& LOKit, void** ppURPContext)
     URPStartCount++;
     return true;
 }
-
-#if !MOBILEAPP
 
 /// Initializes LibreOfficeKit for cross-fork re-use.
 bool globalPreinit(const std::string &loTemplate)

@@ -17,7 +17,6 @@
 
 #include <common/Anonymizer.hpp>
 #include <common/StateEnum.hpp>
-#include <Admin.hpp>
 #include <COOLWSD.hpp>
 #include <ClientSession.hpp>
 #include <ConfigUtil.hpp>
@@ -26,7 +25,6 @@
 #include <HttpRequest.hpp>
 #include <NetUtil.hpp>
 #include <JsonUtil.hpp>
-#include <JailUtil.hpp>
 #include <ProofKey.hpp>
 #include <ProxyRequestHandler.hpp>
 #include <RequestDetails.hpp>
@@ -38,7 +36,10 @@
 #include <wsd/ClientRequestDispatcher.hpp>
 #include <wsd/DocumentBroker.hpp>
 #include <wsd/RequestVettingStation.hpp>
+
 #if !MOBILEAPP
+#include <Admin.hpp>
+#include <JailUtil.hpp>
 #include <wsd/SpecialBrokers.hpp>
 #include <HostUtil.hpp>
 #endif // !MOBILEAPP
@@ -522,7 +523,7 @@ public:
 bool ClientRequestDispatcher::allowPostFrom(const std::string& address)
 {
     static bool init = false;
-    static Util::RegexListMatcher hosts;
+    static RegexUtil::RegexListMatcher hosts;
     if (!init)
     {
         const auto& app = Poco::Util::Application::instance();
@@ -568,9 +569,9 @@ bool ClientRequestDispatcher::allowConvertTo(const std::string& address,
     // Handle forwarded header and make sure all participating IPs are allowed
     if (request.has("X-Forwarded-For"))
     {
-        const std::string forwardedData = request.get("X-Forwarded-For");
+        std::string forwardedData = request.get("X-Forwarded-For");
         LOG_INF_S("convert-to: X-Forwarded-For is: " << forwardedData);
-        StringVector tokens = StringVector::tokenize(forwardedData, ',');
+        StringVector tokens = StringVector::tokenize(std::move(forwardedData), ',');
         for (const auto& token : tokens)
         {
             std::string param = tokens.getParam(token);
@@ -766,9 +767,9 @@ void ClientRequestDispatcher::handleIncomingMessage(SocketDisposition& dispositi
         {
             // File server
             assert(socket && "Must have a valid socket");
-            constexpr auto ProxyRemote = "/remote/";
-            constexpr auto ProxyRemoteLen = sizeof(ProxyRemote) - 1;
-            constexpr auto ProxyRemoteStatic = "/remote/static/";
+            constexpr std::string_view ProxyRemote = "/remote/";
+            constexpr auto ProxyRemoteLen = ProxyRemote.size();
+            constexpr std::string_view ProxyRemoteStatic = "/remote/static/";
             const auto uri = requestDetails.getURI();
             const auto pos = uri.find(ProxyRemoteStatic);
             if (pos != std::string::npos)
@@ -1154,7 +1155,7 @@ void ClientRequestDispatcher::sendResult(const std::shared_ptr<StreamSocket>& so
 }
 
 bool ClientRequestDispatcher::handleWopiAccessCheckRequest(const Poco::Net::HTTPRequest& request,
-                                                           Poco::MemoryInputStream& message,
+                                                           std::istream& message,
                                                            const std::shared_ptr<StreamSocket>& socket)
 {
     assert(socket && "Must have a valid socket");
@@ -1319,8 +1320,8 @@ bool ClientRequestDispatcher::handleWopiAccessCheckRequest(const Poco::Net::HTTP
             sendResult(destSocket, status);
     });
 
-    auto finishHandler =
-        [socketWeak, callbackUrlStr, this](const std::shared_ptr<http::Session>& probeSession)
+    auto finishHandler = [socketWeak, callbackUrlStr = std::move(callbackUrlStr),
+                          this](const std::shared_ptr<http::Session>& probeSession)
     {
         LOG_TRC("finishHandler ");
 
@@ -1384,7 +1385,7 @@ bool ClientRequestDispatcher::handleWopiAccessCheckRequest(const Poco::Net::HTTP
 }
 
 bool ClientRequestDispatcher::handleClipboardRequest(const Poco::Net::HTTPRequest& request,
-                                                     Poco::MemoryInputStream& message,
+                                                     std::istream& message,
                                                      SocketDisposition& disposition,
                                                      const std::shared_ptr<StreamSocket>& socket)
 {
@@ -1821,7 +1822,7 @@ bool ClientRequestDispatcher::isSpreadsheet(const std::string& fileName)
 
 bool ClientRequestDispatcher::handlePostRequest(const RequestDetails& requestDetails,
                                                 const Poco::Net::HTTPRequest& request,
-                                                Poco::MemoryInputStream& message,
+                                                std::istream& message,
                                                 SocketDisposition& disposition,
                                                 const std::shared_ptr<StreamSocket>& socket)
 {
@@ -2134,7 +2135,7 @@ bool ClientRequestDispatcher::handlePostRequest(const RequestDetails& requestDet
 
 bool ClientRequestDispatcher::handleClientProxyRequest(const Poco::Net::HTTPRequest& request,
                                                        const RequestDetails& requestDetails,
-                                                       Poco::MemoryInputStream& message,
+                                                       std::istream& message,
                                                        SocketDisposition& disposition)
 {
     //FIXME: The DocumentURI includes the WOPISrc, which makes it potentially invalid URI.

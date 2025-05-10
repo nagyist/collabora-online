@@ -292,11 +292,13 @@ COOL_JS_LST =\
 	src/canvas/sections/CommentListSection.ts \
 	src/canvas/sections/CalcGridSection.ts \
 	src/canvas/sections/SplitSection.ts \
+	src/canvas/sections/SplitterLinesSection.ts \
 	src/canvas/sections/PixelGridSection.ts \
 	src/canvas/sections/DebugOverlaySection.ts \
 	src/canvas/sections/PreloadMapSection.ts \
 	src/canvas/sections/TilesSection.ts \
 	src/canvas/sections/AutoFillMarkerSection.ts \
+	src/canvas/sections/FocusCellSection.ts \
 	src/canvas/sections/URLPopUpSection.ts \
 	src/canvas/sections/InvalidationRectangleSection.ts \
 	src/canvas/sections/ShapeHandlesSection.ts \
@@ -322,7 +324,6 @@ COOL_JS_LST =\
 	src/layer/vector/CPolyUtil.ts \
 	src/layer/vector/CPolygon.ts \
 	src/layer/vector/CRectangle.ts \
-	src/layer/vector/CSplitterLine.ts \
 	src/layer/marker/Cursor.ts \
 	src/layer/vector/CanvasOverlay.ts \
 	src/canvas/sections/ScrollSection.ts \
@@ -786,7 +787,7 @@ $(INTERMEDIATE_DIR)/cool-src.js: tscompile.done $(call prereq_cool) $(COOL_JS_DS
 $(DIST_FOLDER)/bundle.css: $(call prereq_css)
 	@mkdir -p $(dir $@)
 	@echo "Checking for CSS errors..."
-	@$(NODE) node_modules/stylelint/bin/stylelint.js --config $(srcdir)/.stylelintrc.json $(srcdir)/css/*.css
+	@$(NODE) node_modules/stylelint/bin/stylelint.js --config $(srcdir)/.stylelintrc.json $(srcdir)/css/*.css --fix
 	$(call bundle_css)
 
 $(DIST_FOLDER)/bundle.js: $(INTERMEDIATE_DIR)/cool-src.js $(call prereq_all)
@@ -970,6 +971,8 @@ pot:
 		admin/src/AdminSocketOverview.js \
 		admin/src/AdminSocketSettings.js \
 		admin/src/integrator/AdminIntegratorSettings.ts \
+		admin/src/integrator/WordBook.ts \
+		admin/src/integrator/Xcu.ts \
 		admin/src/Util.js \
 		js/global.js \
 		src/app/Debug.ts \
@@ -1031,6 +1034,7 @@ pot:
 		src/control/jsdialog/Widget.HTMLContent.ts \
 		src/control/jsdialog/Widget.MobileBorderSelector.js \
 		src/control/jsdialog/Widget.SidebarContainers.ts \
+		src/control/jsdialog/Widget.TreeView.ts \
 		src/core/Socket.js \
 		src/docdispatcher.ts \
 		src/docstate.js \

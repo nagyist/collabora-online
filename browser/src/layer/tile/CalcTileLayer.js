@@ -13,7 +13,7 @@
  * Calc tile layer is used to display a spreadsheet document
  */
 
-/* global app CPolyUtil CPolygon TileManager cool */
+/* global app TileManager cool FocusCellSection SplitterLinesSection */
 
 L.CalcTileLayer = L.CanvasTileLayer.extend({
 	options: {
@@ -86,11 +86,15 @@ L.CalcTileLayer = L.CanvasTileLayer.extend({
 		}.bind(this));
 
 		app.sectionContainer.addSection(new app.definitions.AutoFillMarkerSection());
+		app.sectionContainer.addSection(new SplitterLinesSection());
 
 		this.insertMode = false;
 		this._resetInternalState();
 		this._sheetSwitch = new L.SheetSwitchViewRestore(map);
 		this._sheetGrid = true;
+
+		if (window.prefs.getBoolean('ColumnRowHighlightEnabled', false))
+			FocusCellSection.addFocusCellSection();
 	},
 
 	_resetInternalState: function() {
@@ -1086,79 +1090,6 @@ L.CalcTileLayer = L.CanvasTileLayer.extend({
 			TileManager.update();
 			this.enableDrawing();
 		}
-		if (this._map.uiManager.getHighlightMode()) {
-			if (!textMsg.match('EMPTY'))
-				this._highlightColAndRow(textMsg);
-		}
-	},
-
-	updateHighlight: function () {
-		if ( this._map) {
-			if (this._map.uiManager.getHighlightMode()) {
-				var updateMsg = 'updateHighlight';
-				this._highlightColAndRow(updateMsg);
-			}
-			else
-				this._resetReferencesMarks('focuscell');
-		}
-	},
-
-	_highlightColAndRow: function (textMsg) {
-		var strTwips = [];
-		if(textMsg.startsWith('updateHighlight')) {
-			strTwips[0] = app.calc.cellCursorTopLeftTwips.x;
-			strTwips[1] = app.calc.cellCursorTopLeftTwips.y;
-			strTwips[2] = app.calc.cellCursorOffset.x;
-			strTwips[3] = app.calc.cellCursorOffset.y;
-		}
-		else
-			strTwips = textMsg.match(/\d+/g);
-
-		this._resetReferencesMarks('focuscell');
-		var references = [];
-		var rectangles = [];
-		var strColor = getComputedStyle(document.documentElement).getPropertyValue('--column-row-highlight');
-		var maxCol = 268435455;
-		var maxRow = 20971124;
-		var part = this._selectedPart;
-		var topLeftTwips, offset, boundsTwips;
-
-		for(let i = 0; i < 2; i++) {
-			if (i == 0) {
-				// Column rectangle
-				topLeftTwips = new L.Point(parseInt(strTwips[0]), parseInt(0));
-				offset = new L.Point(parseInt(strTwips[2]), parseInt(maxCol));
-				boundsTwips = this._convertToTileTwipsSheetArea(
-					new L.Bounds(topLeftTwips, topLeftTwips.add(offset)));
-				rectangles.push([boundsTwips.getBottomLeft(), boundsTwips.getBottomRight(),
-				boundsTwips.getTopLeft(), boundsTwips.getTopRight()]);
-			} else {
-				// Row rectangle
-				topLeftTwips = new L.Point(parseInt(0), parseInt(strTwips[1]));
-				offset = new L.Point(parseInt(maxRow), parseInt(strTwips[3]));
-				boundsTwips = this._convertToTileTwipsSheetArea(
-					new L.Bounds(topLeftTwips, topLeftTwips.add(offset)));
-				rectangles.push([boundsTwips.getBottomLeft(), boundsTwips.getBottomRight(),
-					boundsTwips.getTopLeft(), boundsTwips.getTopRight()]);
-			}
-
-		    var docLayer = this;
-		    var pointSet = CPolyUtil.rectanglesToPointSet(rectangles, function (twipsPoint) {
-				var corePxPt = docLayer._twipsToCorePixels(twipsPoint);
-				corePxPt.round();
-				return corePxPt;
-			});
-			var reference = new CPolygon(pointSet, {
-				pointerEvents: 'none',
-				fillColor: strColor,
-				fillOpacity: 0.15,
-				weight: 2 * app.dpiScale,
-				opacity: 0.15});
-
-			references.push({mark: reference, part: part, type: 'focuscell'});
-			this._referencesAll.push(references[i]);
-		}
-		this._updateReferenceMarks();
 	},
 
 	_getEditCursorRectangle: function (msgObj) {
@@ -1283,13 +1214,11 @@ L.CalcTileLayer = L.CanvasTileLayer.extend({
 			if (app.calc.cellCursorRectangle.width > freePane.width)
 				return scroll; // no scroll needed.
 
-			var spacingX = app.calc.cellCursorRectangle.width / 4.0;
-
 			if (app.calc.cellCursorRectangle.x1 < freePane.x1) {
-				scroll.x = app.calc.cellCursorRectangle.x1 - freePane.x1 - spacingX;
+				scroll.x = app.calc.cellCursorRectangle.x1 - freePane.x1;
 			}
 			else if (app.calc.cellCursorRectangle.x2 > freePane.x2) {
-				scroll.x = app.calc.cellCursorRectangle.x2 - freePane.x2 + spacingX;
+				scroll.x = app.calc.cellCursorRectangle.x2 - freePane.x2;
 			}
 		}
 
@@ -1298,15 +1227,13 @@ L.CalcTileLayer = L.CanvasTileLayer.extend({
 			if (app.calc.cellCursorRectangle.height > freePane.height)
 				return scroll; // no scroll needed.
 
-			var spacingY = 100; // twips margin
-
 			// try to center in free pane the top of a cell
 			if (app.calc.cellCursorRectangle.y1 < freePane.y1)
-				scroll.y = app.calc.cellCursorRectangle.y1 - freePane.y1 - spacingY;
+				scroll.y = app.calc.cellCursorRectangle.y1 - freePane.y1;
 
 			// then check if end of a cell is visible
 			if (app.calc.cellCursorRectangle.y2 > freePane.y2 + scroll.y)
-				scroll.y = scroll.y + (app.calc.cellCursorRectangle.y2 - freePane.y2 + spacingY);
+				scroll.y = scroll.y + (app.calc.cellCursorRectangle.y2 - freePane.y2);
 		}
 
 		return scroll;

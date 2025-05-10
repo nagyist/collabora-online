@@ -10,7 +10,7 @@ function showSidebar() {
 
 	cy.cGet('#sidebar').should('not.have.class', 'selected');
 	cy.cGet('#sidebar-dock-wrapper').should('not.be.visible');
-	cy.cGet('#sidebar').click({force: true});
+	cy.cGet('#sidebar').click();
 	cy.cGet('#sidebar').should('have.class', 'selected');
 	cy.cGet('#sidebar-dock-wrapper').should('be.visible');
 
@@ -24,7 +24,7 @@ function hideSidebar() {
 
 	cy.cGet('#sidebar').should('have.class', 'selected');
 	cy.cGet('#sidebar-dock-wrapper').should('be.visible');
-	cy.cGet('#sidebar').click({force: true});
+	cy.cGet('#sidebar').click();
 	cy.cGet('#sidebar').should('not.have.class', 'selected');
 	cy.cGet('#sidebar-dock-wrapper').should('not.be.visible');
 
@@ -36,7 +36,7 @@ function hideSidebarImpress() {
 
 	cy.cGet('#modifypage').should('have.class', 'selected');
 	cy.cGet('#sidebar-dock-wrapper').should('be.visible');
-	cy.cGet('#modifypage button').click({force: true});
+	cy.cGet('#modifypage button').click('left');
 	cy.cGet('#modifypage').should('not.have.class', 'selected');
 	cy.cGet('#sidebar-dock-wrapper').should('not.be.visible');
 
@@ -202,9 +202,9 @@ function doZoom(zoomIn) {
 
 	// Force because sometimes the icons are scrolled off the screen to the right
 	if (zoomIn) {
-		cy.cGet('#toolbar-down #zoomin').click({force: true});
+		cy.cGet('#toolbar-down #zoomin').click();
 	} else {
-		cy.cGet('#toolbar-down #zoomout').click({force: true});
+		cy.cGet('#toolbar-down #zoomout').click();
 	}
 
 	// Wait for animation to complete
@@ -239,8 +239,8 @@ function selectZoomLevel(zoomLevel, makeZoomVisible = true) {
 	// Force because sometimes the icons are scrolled off the screen to the right
 	if (makeZoomVisible)
 		makeZoomItemsVisible();
-	cy.cGet('#toolbar-down #zoom .arrowbackground').click({force: true});
-	cy.cGet('#zoom-dropdown').contains('.ui-combobox-entry', zoomLevel).click({force: true});
+	cy.cGet('#toolbar-down #zoom .arrowbackground').click();
+	cy.cGet('#zoom-dropdown').contains('.ui-combobox-entry', zoomLevel).click();
 	shouldHaveZoomLevel(zoomLevel);
 
 	cy.log('<< selectZoomLevel - end');
@@ -251,7 +251,7 @@ function resetZoomLevel() {
 	cy.log('>> resetZoomLevel - start');
 
 	// Force because sometimes the icons are scrolled off the screen to the right
-	cy.cGet('#toolbar-down #zoomreset').click({force: true});
+	cy.cGet('#toolbar-down #zoomreset').click();
 	shouldHaveZoomLevel('100');
 
 	cy.log('<< resetZoomLevel - end');
@@ -262,19 +262,19 @@ function insertImage(docType) {
 
 	selectZoomLevel('50', false);
 
-	cy.cGet('#toolbar-up .ui-scroll-right').click();
+	cy.cGet('#toolbar-up .ui-scroll-right').click().click().click();
 
 	const mode = Cypress.env('USER_INTERFACE');
 
 	if (mode === 'notebookbar')
-		cy.cGet('#toolbar-up .ui-scroll-right').click();
+		cy.cGet('#toolbar-up .ui-scroll-right').click().click();
 
 	if (docType === 'calc' &&  mode === 'notebookbar') {
 		cy.cGet('#Insert-tab-label').click();
-		cy.cGet('#Insert-container .unoInsertGraphic').click({force: true});
+		cy.cGet('#Insert-container .unoInsertGraphic').click();
 	}
 	else {
-		cy.cGet('#Home-container .unoInsertGraphic').click({force: true});
+		cy.cGet('#Home-container .unoInsertGraphic').click();
 	}
 
 	cy.cGet('#insertgraphic[type=file]').attachFile('/desktop/writer/image_to_insert.png');
@@ -295,7 +295,7 @@ function insertVideo() {
 	if (mode === 'notebookbar') cy.cGet('#toolbar-up .ui-scroll-right').click();
 
 	cy.cGet('#Insert-tab-label').click();
-	cy.cGet('#Insert-container .insertmultimedia').click({ force: true });
+	cy.cGet('#Insert-container .insertmultimedia').click();
 
 	cy.cGet('#insertmultimedia[type=file]').attachFile(
 		'/desktop/impress/video_to_insert.mp4'
@@ -324,7 +324,7 @@ function insertComment(text = 'some text0', save = true) {
 	var mode = Cypress.env('USER_INTERFACE');
 	if (mode === 'notebookbar') {
 		cy.cGet('#Insert-tab-label').click();
-		cy.cGet('#insert-insert-annotation').click({force: true});
+		cy.cGet('#insert-insert-annotation').click();
 	} else {
 		cy.cGet('#menu-insert').click();
 		cy.cGet('#menu-insertcomment').click();

@@ -14,14 +14,12 @@
 #include <cassert>
 #include <cerrno>
 #include <chrono>
-#include <cinttypes>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <algorithm>
 #include <limits>
 #include <mutex>
-#include <set>
 #include <sstream>
 #include <string>
 #include <map>
@@ -363,11 +361,8 @@ namespace Util
 
     const char *getThreadName();
 
-#if defined __linux__
-    pid_t getThreadId();
-#else
     long getThreadId();
-#endif
+    long getProcessId();
 
     void killThreadById(int tid, int signal);
 
@@ -492,7 +487,7 @@ namespace Util
         return trimmed(std::string(s));
     }
 
-#ifdef IOS
+#if !HAVE_MEMRCHR
 
     inline void *memrchr(const void *s, int c, size_t n)
     {
@@ -590,7 +585,9 @@ int main(int argc, char**argv)
         case ENOMEM: return "ENOMEM";
         case EACCES: return "EACCES";
         case EFAULT: return "EFAULT";
+#ifdef ENOTBLK
         case ENOTBLK: return "ENOTBLK";
+#endif
         case EBUSY: return "EBUSY";
         case EEXIST: return "EEXIST";
         case EXDEV: return "EXDEV";
@@ -673,7 +670,9 @@ int main(int argc, char**argv)
 #ifdef ENOPKG
         case ENOPKG: return "ENOPKG";
 #endif
+#ifdef EREMOTE
         case EREMOTE: return "EREMOTE";
+#endif
         case ENOLINK: return "ENOLINK";
 #ifdef EADV
         case EADV: return "EADV";
@@ -685,7 +684,9 @@ int main(int argc, char**argv)
         case ECOMM: return "ECOMM";
 #endif
         case EPROTO: return "EPROTO";
+#ifdef EMULTIHOP
         case EMULTIHOP: return "EMULTIHOP";
+#endif
 #ifdef EDOTDOT
         case EDOTDOT: return "EDOTDOT";
 #endif
@@ -722,16 +723,22 @@ int main(int argc, char**argv)
 #ifdef ESTRPIPE
         case ESTRPIPE: return "ESTRPIPE";
 #endif
+#ifdef EUSERS
         case EUSERS: return "EUSERS";
+#endif
         case ENOTSOCK: return "ENOTSOCK";
         case EDESTADDRREQ: return "EDESTADDRREQ";
         case EMSGSIZE: return "EMSGSIZE";
         case EPROTOTYPE: return "EPROTOTYPE";
         case ENOPROTOOPT: return "ENOPROTOOPT";
         case EPROTONOSUPPORT: return "EPROTONOSUPPORT";
+#ifdef ESOCKTNOSUPPORT
         case ESOCKTNOSUPPORT: return "ESOCKTNOSUPPORT";
+#endif
         case EOPNOTSUPP: return "EOPNOTSUPP";
+#ifdef EPFNOSUPPORT
         case EPFNOSUPPORT: return "EPFNOSUPPORT";
+#endif
         case EAFNOSUPPORT: return "EAFNOSUPPORT";
         case EADDRINUSE: return "EADDRINUSE";
         case EADDRNOTAVAIL: return "EADDRNOTAVAIL";
@@ -741,17 +748,29 @@ int main(int argc, char**argv)
         case ECONNABORTED: return "ECONNABORTED";
         case ECONNRESET: return "ECONNRESET";
         case ENOBUFS: return "ENOBUFS";
+#ifdef EISCONN
         case EISCONN: return "EISCONN";
+#endif
+#ifdef ENOTCONN
         case ENOTCONN: return "ENOTCONN";
+#endif
+#ifdef ESHUTDOWN
         case ESHUTDOWN: return "ESHUTDOWN";
+#endif
+#ifdef ETOOMANYREFS
         case ETOOMANYREFS: return "ETOOMANYREFS";
+#endif
         case ETIMEDOUT: return "ETIMEDOUT";
         case ECONNREFUSED: return "ECONNREFUSED";
+#ifdef EHOSTDOWN
         case EHOSTDOWN: return "EHOSTDOWN";
+#endif
         case EHOSTUNREACH: return "EHOSTUNREACH";
         case EALREADY: return "EALREADY";
         case EINPROGRESS: return "EINPROGRESS";
+#ifdef ESTALE
         case ESTALE: return "ESTALE";
+#endif
 #ifdef EUCLEAN
         case EUCLEAN: return "EUCLEAN";
 #endif
@@ -767,7 +786,9 @@ int main(int argc, char**argv)
 #ifdef EREMOTEIO
         case EREMOTEIO: return "EREMOTEIO";
 #endif
+#ifdef EDQUOT
         case EDQUOT: return "EDQUOT";
+#endif
 #ifdef ENOMEDIUM
         case ENOMEDIUM: return "ENOMEDIUM";
 #endif
@@ -929,6 +950,11 @@ int main(int argc, char**argv)
         std::memcpy(vector.data() + vlen, data, dataLen);
     }
 
+    inline void vectorAppend(std::vector<char> &vector, const std::string &str)
+    {
+        vectorAppend(vector, str.c_str(), str.length());
+    }
+
     /// Splits a URL into path (with protocol), filename, extension, parameters.
     /// All components are optional, depending on what the URL represents (can be a unix path).
     std::tuple<std::string, std::string, std::string, std::string> splitUrl(const std::string& url);
@@ -939,92 +965,6 @@ int main(int argc, char**argv)
     /// Cleanup a filename replacing anything potentially problematic
     /// either for a URL or for a file path
     std::string cleanupFilename(const std::string &filename);
-
-    /// Return true if the subject matches in given set. It uses regex
-    /// Mainly used to match WOPI hosts patterns
-    bool matchRegex(const std::set<std::string>& set, const std::string& subject);
-
-    /// Return value from key:value pair if the subject matches in given map. It uses regex
-    /// Mainly used to match WOPI hosts patterns
-    std::string getValue(const std::map<std::string, std::string>& map, const std::string& subject);
-
-    std::string getValue(const std::set<std::string>& set, const std::string& subject);
-
-    /// Given one or more patterns to allow, and one or more to deny,
-    /// the match member will return true if, and only if, the subject
-    /// matches the allowed list, but not the deny.
-    /// By default, everything is denied.
-    class RegexListMatcher
-    {
-    public:
-        RegexListMatcher() :
-            _allowByDefault(false)
-        {
-        }
-
-        RegexListMatcher(const bool allowByDefault)
-            : _allowByDefault(allowByDefault)
-        {
-        }
-
-        RegexListMatcher(std::initializer_list<std::string> allowed)
-            : _allowed(allowed)
-            , _allowByDefault(false)
-        {
-        }
-
-        RegexListMatcher(std::initializer_list<std::string> allowed,
-                         std::initializer_list<std::string> denied)
-            : _allowed(allowed)
-            , _denied(denied)
-            , _allowByDefault(false)
-        {
-        }
-
-        RegexListMatcher(const bool allowByDefault,
-                         std::initializer_list<std::string> denied)
-            : _denied(denied)
-            , _allowByDefault(allowByDefault)
-        {
-        }
-
-        void allow(const std::string& pattern) { _allowed.insert(pattern); }
-        void deny(const std::string& pattern)
-        {
-            _allowed.erase(pattern);
-            _denied.insert(pattern);
-        }
-
-        void clear()
-        {
-            _allowed.clear();
-            _denied.clear();
-        }
-
-        bool match(const std::string& subject) const
-        {
-            return (_allowByDefault ||
-                    Util::matchRegex(_allowed, subject)) &&
-                   !Util::matchRegex(_denied, subject);
-        }
-
-        // whether a match exist within both _allowed and _denied
-        bool matchExist(const std::string& subject) const
-        {
-            return (Util::matchRegex(_allowed, subject) ||
-                    Util::matchRegex(_denied, subject));
-        }
-
-        bool empty() const
-        {
-            return _allowed.empty() && _denied.empty();
-        }
-
-    private:
-        std::set<std::string> _allowed;
-        std::set<std::string> _denied;
-        const bool _allowByDefault;
-    };
 
     /// Simple backtrace capture
     /// Use case, e.g. streaming up to 20 frames to log: `LOG_TRC( Util::Backtrace::get(20) );`
@@ -1392,6 +1332,10 @@ int main(int argc, char**argv)
     template <typename T, size_t S> char (&n_array_size( T(&)[S] ))[S];
 
 #define N_ELEMENTS(arr)     (sizeof(Util::n_array_size(arr)))
+
+    // Wrap localtime_r() and gmtime_t() which are not portable
+    std::tm *time_t_to_localtime(std::time_t t, std::tm& tm);
+    std::tm *time_t_to_gmtime(std::time_t t, std::tm& tm);
 
 } // end namespace Util
 

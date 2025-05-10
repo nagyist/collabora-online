@@ -12,7 +12,7 @@
 #pragma once
 
 #include <ctime>
-#include <list>
+#include <deque>
 #include <memory>
 #include <regex>
 #include <set>
@@ -155,10 +155,6 @@ public:
 /// A document in Admin controller.
 class Document final
 {
-    // cf. FILE* member.
-    Document(const Document &) = delete;
-    Document& operator = (const Document &) = delete;
-
 public:
     Document(const std::string& docKey, pid_t pid,
              const std::string& filename, const Poco::URI& wopiSrc)
@@ -185,10 +181,6 @@ public:
         , _isModified(false)
         , _hasMemDirtyChanged(true)
         , _isUploaded(false)
-    {
-    }
-
-    ~Document()
     {
     }
 
@@ -220,7 +212,8 @@ public:
 
     const std::map<std::string, View>& getViews() const { return _views; }
 
-    void updateLastActivityTime() { _lastActivity = std::time(nullptr); }
+    void updateLastActivityTime(std::time_t lastActivity) { _lastActivity = lastActivity; }
+    std::time_t getLastActivityTime() const { return _lastActivity; }
     void updateMemoryDirty();
     size_t getMemoryDirty() const { return _memoryDirty; }
 
@@ -256,13 +249,6 @@ public:
     time_t getAbortTime() const { return _abortTime; }
     void setAbortTime(time_t abortTime) { _abortTime = abortTime; }
 
-    // If the Document is expired then _memoryDirty is now static and we can
-    // drop the _procSMaps reference as we have no further interest in it.
-    void setExpired()
-    {
-        _procSMaps.reset();
-    }
-
     std::string to_string() const;
 
 private:
@@ -271,7 +257,7 @@ private:
     /// SessionId mapping to View object
     std::map<std::string, View> _views;
     std::vector<std::string> _snapshots;
-    const std::string _docKey;
+    std::string _docKey;
     /// Hosted filename
     std::string _filename;
     /// The dirty (ie. un-shared) memory of the document's Kit process.
@@ -297,7 +283,7 @@ private:
     std::time_t _badBehaviorDetectionTime;
     std::time_t _abortTime;
 
-    const pid_t _pid;
+    pid_t _pid;
     /// Total number of active views
     unsigned _activeViews;
 
@@ -408,6 +394,7 @@ public:
     void removeDocument(const std::string& docKey);
 
     void updateLastActivityTime(const std::string& docKey);
+    std::time_t getLastActivityTime() const { return _lastActivity; }
 
     void addBytes(const std::string& docKey, uint64_t sent, uint64_t recv);
 
@@ -456,7 +443,7 @@ public:
     void sendShutdownReceivedMsg();
 
 private:
-    void doRemove(std::map<std::string, std::unique_ptr<Document>>::iterator &docIt);
+    void doRemove(std::map<std::string, Document>::iterator &docIt);
 
     std::string getMemStats() const;
 
@@ -478,17 +465,17 @@ private:
     DocProcSettings _defDocProcSettings;
 
     std::map<int, Subscriber> _subscribers;
-    std::map<std::string, std::unique_ptr<Document>> _documents;
+    std::map<std::string, Document> _documents;
 
     /// The serialized histories of all expired documents.
     std::vector<std::string> _expiredDocumentsHistories;
 
     /// The last N total memory Dirty size.
-    std::list<unsigned> _memStats;
-    std::list<unsigned> _cpuStats;
-    std::list<unsigned> _sentStats;
-    std::list<unsigned> _recvStats;
-    std::list<size_t> _connStats;
+    std::deque<unsigned> _memStats;
+    std::deque<unsigned> _cpuStats;
+    std::deque<unsigned> _sentStats;
+    std::deque<unsigned> _recvStats;
+    std::deque<size_t> _connStats;
 
     uint64_t _sentBytesTotal = 0;
     uint64_t _recvBytesTotal = 0;
@@ -497,6 +484,8 @@ private:
     uint64_t _lostKitsTerminatedCount = 0;
     uint64_t _killedCount = 0;
     uint64_t _oomKilledCount = 0;
+
+    std::time_t _lastActivity = 0;
 
     /// We check the owner even in the release builds, needs to be always correct.
     std::thread::id _owner;

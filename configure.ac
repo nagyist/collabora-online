@@ -3,7 +3,7 @@
 
 AC_PREREQ([2.63])
 
-AC_INIT([coolwsd], [25.04.0.3], [https://github.com/CollaboraOnline/online/issues], [coolwsd], [https://collaboraonline.github.io/])
+AC_INIT([coolwsd], [25.04.1.1], [https://github.com/CollaboraOnline/online/issues], [coolwsd], [https://collaboraonline.github.io/])
 LT_INIT([shared, disable-static, dlopen])
 
 AM_INIT_AUTOMAKE([1.10 foreign subdir-objects tar-pax -Wno-portability])
@@ -437,7 +437,7 @@ AC_MSG_CHECKING([whether to enable debug build])
 if test "$enable_debug" = "yes"; then
    AC_MSG_RESULT([yes])
    AC_DEFINE([ENABLE_DEBUG],1,[Whether to compile in some extra debugging support code and disable some security pieces])
-   AC_DEFINE([CONFIG_STATIC],,[Static config values are disabled in debug builds to allow for overriding in tests])
+   AC_DEFINE([CONFIG_STATIC_TYPE],,[Static config values are disabled in debug builds to allow for overriding in tests])
    ENABLE_DEBUG=true
    ENABLE_DEBUG_PROTOCOL=true
    COOLWSD_LOGLEVEL="trace"
@@ -475,15 +475,20 @@ if test "$enable_debug" = "yes"; then
 else
     AC_MSG_RESULT([no (Release build)])
     AC_DEFINE([ENABLE_DEBUG],0,[Whether to compile in some extra debugging support code and disable some security pieces])
-    AC_DEFINE([CONFIG_STATIC],static,[Static config values are enabled in release builds for performance])
+    AC_DEFINE([CONFIG_STATIC_TYPE],static,[Static config values are enabled in release builds for performance])
 fi
 AC_SUBST(ENABLE_DEBUG)
 AC_SUBST(ENABLE_BUNDLE)
 AC_SUBST(COOLWSD_LOGLEVEL)
+AC_DEFINE_UNQUOTED([COOLWSD_LOGLEVEL],["$COOLWSD_LOGLEVEL"],[Default coolwsd loglevel.])
 AC_SUBST(COOLWSD_LOG_TO_FILE)
 AC_SUBST(COOLWSD_LOG_UICMD_TO_FILE)
 AC_SUBST(BROWSER_LOGGING)
 AC_SUBST(NUM_PRESPAWN_CHILDREN)
+AC_DEFINE_UNQUOTED([NUM_PRESPAWN_CHILDREN],["$NUM_PRESPAWN_CHILDREN"],[Default number of pre-spawn children.])
+
+DEBUG_ABSSRCDIR=`(cd "$srcdir" && pwd -P)`
+AC_DEFINE_UNQUOTED([DEBUG_ABSSRCDIR], ["$DEBUG_ABSSRCDIR"], [Absolute path to the top-level source directory])
 
 if test "$enable_debug_protocol" = no; then
    ENABLE_DEBUG_PROTOCOL=false
@@ -530,10 +535,14 @@ if test -z "$anonym_msg";  then
   anonym_msg="anonymization of user-data is disabled"
 fi
 
+# Disable (0) or Enable (2) exotic file formats
+ENABLE_EXOTIC_FILE_FORMATS="0"
+
 if test "$enable_experimental" = "yes" ; then
   ENABLE_EXPERIMENTAL=true
   experimental_msg="enabled by default"
   SSL_VERIFY="false"
+  ENABLE_EXOTIC_FILE_FORMATS="2"
 fi
 AC_SUBST(ENABLE_EXPERIMENTAL)
 
@@ -541,6 +550,14 @@ AC_MSG_CHECKING([if ssl verification is enabled by default])
 AC_MSG_RESULT([$SSL_VERIFY])
 AC_DEFINE_UNQUOTED([SSL_VERIFY],["$SSL_VERIFY"],[Default SSL Verification mode])
 AC_SUBST(SSL_VERIFY)
+
+AC_MSG_CHECKING([if exotic file formats are enabled by default])
+if test "$ENABLE_EXOTIC_FILE_FORMATS" = "0"; then
+  AC_MSG_RESULT([no])
+else
+  AC_MSG_RESULT([yes])
+fi
+AC_SUBST(ENABLE_EXOTIC_FILE_FORMATS)
 
 AC_SUBST(SERVER_SIGNATURE)
 
@@ -1309,11 +1326,24 @@ dnl    tile compression
        PKG_CHECK_MODULES([CPPUNIT], [cppunit])
        ])
 
-AS_IF([test `uname -s` = Linux -a "$ENABLE_ANDROIDAPP" != "true" -a "$host_os" != "emscripten"],
-      [AC_SEARCH_LIBS([cap_get_proc],
-                      [cap],
-                      [],
-                      [AC_MSG_ERROR([libcap not available?])])])
+# Check if the platform supports Capabilities
+AC_CHECK_HEADERS([sys/capability.h],
+    [ have_capability_h=yes ],
+    [ have_capability_h=no ])
+
+AS_IF([test "x$have_capability_h" = xyes], [
+    dnl If the header is found, proceed to look for the libcap library:
+    AC_SEARCH_LIBS([cap_get_proc], [cap],
+    [
+        dnl If found, define a macro we can test in our code
+        AC_DEFINE([HAVE_LIBCAP], [1], [Define to 1 if libcap (cap_get_proc) is available])
+    ],
+    [
+        AC_MSG_ERROR([libcap not available?])
+    ])
+], [
+    AC_MSG_WARN([sys/capability.h not found; skipping capabilities.])
+])
 
 dnl NB. this is a gtk3 frontend.
 webkit_try_older=
@@ -1559,6 +1589,7 @@ if test "x${prefix}" = "xNONE"; then
 fi
 eval COOLWSD_CONFIGDIR="${sysconfdir}/${PACKAGE}"
 AC_SUBST(COOLWSD_CONFIGDIR)
+AC_DEFINE_UNQUOTED([COOLWSD_CONFIGDIR],["$COOLWSD_CONFIGDIR"],[Directory that contains configuration of coolwsd.])
 
 COOLWSD_DATADIR=${datadir}/${PACKAGE}
 AC_SUBST(COOLWSD_DATADIR)
@@ -1645,6 +1676,7 @@ AS_IF([test "$ENABLE_IOSAPP" = "true"],
 AC_SUBST(IOSAPP_FONTS)
 
 AC_CHECK_FUNCS(ppoll)
+AC_CHECK_FUNCS([memrchr])
 
 ENABLE_CYPRESS=false
 if test "$enable_cypress" = "yes"; then
@@ -1825,6 +1857,7 @@ AC_CONFIG_FILES([Makefile
                  browser/images/Makefile
                  browser/l10n/Makefile
                  browser/npm-shrinkwrap.json
+                 coolkitconfig.xcu
                  coolwsd.spec
                  coolwsd.xml
                  debian/coolwsd.postinst])

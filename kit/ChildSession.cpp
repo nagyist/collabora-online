@@ -50,6 +50,7 @@
 #include <Png.hpp>
 #include <Clipboard.hpp>
 #include <CommandControl.hpp>
+#include <SlideCompressor.hpp>
 
 #ifdef IOS
 #include "DocumentViewController.h"
@@ -111,6 +112,7 @@ ChildSession::ChildSession(const std::shared_ptr<ProtocolHandlerInterface>& prot
     , _URPContext(nullptr)
     , _hasURP(false)
 {
+#if !MOBILEAPP
     if (isURPEnabled())
     {
         LOG_WRN("URP is enabled in the config: Starting a URP tunnel for this session ["
@@ -122,7 +124,7 @@ ChildSession::ChildSession(const std::shared_ptr<ProtocolHandlerInterface>& prot
             LOG_INF("Failed to start a URP bridge for this session [" << getName()
                                                                       << "], disabling URP");
     }
-
+#endif
     LOG_INF("ChildSession ctor [" << getName() << "]. JailRoot: [" << _jailRoot << ']');
 }
 
@@ -194,7 +196,7 @@ bool ChildSession::_handleInput(const char *buffer, int length)
     const StringVector tokens = StringVector::tokenize(firstLine.data(), firstLine.size());
 
     // if _clientVisibleArea.getWidth() == 0, then it is probably not a real user.. probably is a convert-to or similar
-    LogUiCommands logUndoRelatedcommandAtfunctionEnd(this, &tokens);
+    LogUiCommands logUndoRelatedcommandAtfunctionEnd(*this, &tokens);
     if (_isDocLoaded && Log::isLogUIEnabled() && _clientVisibleArea.getWidth() != 0)
     {
         logUndoRelatedcommandAtfunctionEnd._lastUndoCount = atoi(getLOKitDocument()->getCommandValues(".uno:UndoCount"));
@@ -304,7 +306,7 @@ bool ChildSession::_handleInput(const char *buffer, int length)
         WatchdogGuard watchdogGuard;
         _isDocLoaded = loadDocument(tokens);
 
-        LogUiCommands uiLog(this);
+        LogUiCommands uiLog(*this);
         uiLog.logSaveLoad("load", Poco::URI(getJailedFilePath()).getPath(), timeStart);
 
         LOG_TRC("isDocLoaded state after loadDocument: " << _isDocLoaded);
@@ -723,7 +725,7 @@ bool ChildSession::_handleInput(const char *buffer, int length)
                 bool result = unoCommand(unoSave);
                 if (result)
                 {
-                    LogUiCommands uiLog(this);
+                    LogUiCommands uiLog(*this);
                     uiLog.logSaveLoad("save", Poco::URI(getJailedFilePath()).getPath(), timeStart);
                 }
 
@@ -754,7 +756,7 @@ bool ChildSession::_handleInput(const char *buffer, int length)
             bool result = saveAs(tokens);
             if (result)
             {
-                LogUiCommands uiLog(this);
+                LogUiCommands uiLog(*this);
                 uiLog.logSaveLoad("saveas", Poco::URI(getJailedFilePath()).getPath(), timeStart);
             }
             return result;
@@ -765,7 +767,7 @@ bool ChildSession::_handleInput(const char *buffer, int length)
             bool result = exportAs(tokens);
             if (result)
             {
-                LogUiCommands uiLog(this);
+                LogUiCommands uiLog(*this);
                 uiLog.logSaveLoad("exportas", Poco::URI(getJailedFilePath()).getPath(), timeStart);
             }
             return result;
@@ -946,7 +948,7 @@ bool ChildSession::loadDocument(const StringVector& tokens)
 #if ENABLE_DEBUG && !MOBILEAPP
     if (std::getenv("PAUSEFORDEBUGGER"))
     {
-        std::cerr << getDocURL() << " paused waiting for a debugger to attach: " << getpid() << std::endl;
+        std::cerr << getDocURL() << " paused waiting for a debugger to attach: " << Util::getProcessId() << std::endl;
         SigUtil::setDebuggerSignal();
         pause();
     }
@@ -1720,21 +1722,45 @@ bool ChildSession::paste(const char* buffer, int length, const StringVector& tok
 bool ChildSession::insertFile(const StringVector& tokens)
 {
     std::string name, type, data;
+    int multimedia_width = 0;
+    int multimedia_height = 0;
 
     if constexpr (!Util::isMobileApp())
     {
-        if (tokens.size() != 3 || !getTokenString(tokens[1], "name", name) ||
+        if (tokens.size() < 3 || !getTokenString(tokens[1], "name", name) ||
             !getTokenString(tokens[2], "type", type))
         {
+            sendTextFrameAndLogError("error: cmd=insertfile kind=syntax");
+            return false;
+        }
+
+        if (type == "multimedia") {
+            if (tokens.size() != 5 || !getTokenInteger(tokens[3], "width", multimedia_width) ||
+                !getTokenInteger(tokens[4], "height", multimedia_height)) {
+                sendTextFrameAndLogError("error: cmd=insertfile kind=syntax");
+                return false;
+            }
+        } else if (tokens.size() != 3) {
             sendTextFrameAndLogError("error: cmd=insertfile kind=syntax");
             return false;
         }
     }
     else
     {
-        if (tokens.size() != 4 || !getTokenString(tokens[1], "name", name) ||
+        if (tokens.size() < 4 || !getTokenString(tokens[1], "name", name) ||
             !getTokenString(tokens[2], "type", type) || !getTokenString(tokens[3], "data", data))
         {
+            sendTextFrameAndLogError("error: cmd=insertfile kind=syntax");
+            return false;
+        }
+
+        if (type == "multimedia") {
+            if (tokens.size() != 6 || !getTokenInteger(tokens[4], "width", multimedia_width) ||
+                !getTokenInteger(tokens[5], "height", multimedia_height)) {
+                sendTextFrameAndLogError("error: cmd=insertfile kind=syntax");
+                return false;
+            }
+        } else if (tokens.size() != 4) {
             sendTextFrameAndLogError("error: cmd=insertfile kind=syntax");
             return false;
         }
@@ -1803,15 +1829,15 @@ bool ChildSession::insertFile(const StringVector& tokens)
                     "\"value\":{"
                         "\"type\":\"com.sun.star.awt.Size\","
                         "\"value\":{"
-                            // We don't know the real size, but the core we have can't calculate it for us either due to a lack of gstreamer. Use the default...
-                            // TODO: someday, maybe we could send this from online, perhaps calculating it by using a video element, if we're inserting a video?
+                            // Core can't calculate the size for us due to a lack of gstreamer,
+                            // but for multimedia (not multimediaurl) we can do it in online with a <video> element
                             "\"Width\":{"
                                 "\"type\":\"long\","
-                                "\"value\":0"
+                                "\"value\":" + std::to_string(multimedia_width) +
                             "},"
                             "\"Height\":{"
                                 "\"type\":\"long\","
-                                "\"value\":0"
+                                "\"value\":" + std::to_string(multimedia_height) +
                             "}"
                         "}"
                     "}"
@@ -2063,11 +2089,11 @@ bool ChildSession::dialogEvent(const StringVector& tokens)
     {
         getLOKitDocument()->setView(_viewId);
         getLOKitDocument()->sendDialogEvent(lokWindowId,
-                                            tokens.cat(' ', 2).c_str());
+                                            tokens.substrFromToken(2).c_str());
     }
     else
     {
-        getLOKit()->sendDialogEvent(lokWindowId, tokens.cat(' ', 2).c_str());
+        getLOKit()->sendDialogEvent(lokWindowId, tokens.substrFromToken(2).c_str());
     }
 
     return true;
@@ -2279,7 +2305,7 @@ bool ChildSession::unoCommand(const StringVector& tokens)
                           tokens.equals(1, ".uno:OpenHyperlink") ||
                           tokens.startsWith(1, "vnd.sun.star.script:"));
 
-    const std::string saveArgs = tokens.cat(' ', 2);
+    const std::string saveArgs = tokens.substrFromToken(2);
     LOG_TRC("uno command " << tokens[1] << " " << saveArgs << " notify: " << bNotify);
 
     // check that internal UNO commands don't make it to the core
@@ -2378,70 +2404,74 @@ uint64_t hashSubBuffer(unsigned char* pixmap, size_t startX, size_t startY,
 }
 }
 
-bool ChildSession::renderNextSlideLayer(const unsigned width, const unsigned height, double dDevicePixelRatio, bool& done)
+bool ChildSession::renderNextSlideLayer(SlideCompressor &scomp,
+                                        const unsigned width, const unsigned height,
+                                        double devicePixelRatio, bool& done)
 {
-    std::vector<unsigned char> pixmap(static_cast<size_t>(4) * width * height);
-    bool bIsBitmapLayer = false;
+    // FIXME: we need a multi-user / view cache somewhere here (?)
+    auto pixmap = std::make_shared<std::vector<unsigned char>>(static_cast<size_t>(4) * width * height);
+    bool isBitmapLayer = false;
     char* msg = nullptr;
-    done = getLOKitDocument()->renderNextSlideLayer(pixmap.data(), &bIsBitmapLayer, &dDevicePixelRatio, &msg);
+    done = getLOKitDocument()->renderNextSlideLayer(pixmap->data(), &isBitmapLayer, &devicePixelRatio, &msg);
     std::string jsonMsg(msg);
     free(msg);
 
     if (jsonMsg.empty())
         return true;
 
-    if (!bIsBitmapLayer)
-    {
-        std::string response = "slidelayer: " + jsonMsg;
-        sendTextFrame(response);
-        return true;
-    }
-
     const auto tileMode = static_cast<LibreOfficeKitTileMode>(getLOKitDocument()->getTileMode());
-
-    if (watermark())
-    {
-        const int watermarkWidth = width / 4;
-        const int watermarkHeight = height / 3;
-        const int stampsByX = 4;
-        const int stampsByY = 3;
-        for (int i = 0; i < stampsByX; ++i)
+    scomp.pushWork(
+        [=, this, pixmap = std::move(pixmap),
+         jsonMsg = std::move(jsonMsg)](std::vector<char>& output)
         {
-            int offsetX = i * watermarkWidth;
-            for (int j = 0; j < stampsByY; ++j)
+            if (!isBitmapLayer)
             {
-                int offsetY = j * watermarkHeight;
-                watermark()->blending(pixmap.data(), offsetX, offsetY,
-                                      width, height, watermarkWidth, watermarkHeight,
-                                      tileMode, /*isSlideShowLayer*/ true);
+                std::string response = "slidelayer: " + jsonMsg;
+                Util::vectorAppend(output, response);
+                return;
             }
-        }
-    }
 
-    uint64_t pixmapHash = hashSubBuffer(pixmap.data(), 0, 0, width, height, width, height) + getViewId();
-    if (size_t start = jsonMsg.find("%IMAGETYPE%"); start != std::string::npos)
-        jsonMsg.replace(start, 11, "png");
-    if (size_t start = jsonMsg.find("%IMAGECHECKSUM%"); start != std::string::npos)
-        jsonMsg.replace(start, 15, std::to_string(pixmapHash));
+            if (watermark())
+            {
+                const int watermarkWidth = width / 4;
+                const int watermarkHeight = height / 3;
+                const int stampsByX = 4;
+                const int stampsByY = 3;
+                for (int i = 0; i < stampsByX; ++i)
+                {
+                    int offsetX = i * watermarkWidth;
+                    for (int j = 0; j < stampsByY; ++j)
+                    {
+                        int offsetY = j * watermarkHeight;
+                        // presumed thread-safe
+                        watermark()->blending(pixmap->data(), offsetX, offsetY,
+                                              width, height, watermarkWidth, watermarkHeight,
+                                              tileMode, /*isSlideShowLayer*/ true);
+                    }
+                }
+            }
 
-    std::string response = "slidelayer: " + jsonMsg;
+            uint64_t pixmapHash = hashSubBuffer(pixmap->data(), 0, 0, width, height, width, height) + getViewId();
+            std::string json = jsonMsg;
+            if (size_t start = json.find("%IMAGETYPE%"); start != std::string::npos)
+                json.replace(start, 11, "png");
+            if (size_t start = json.find("%IMAGECHECKSUM%"); start != std::string::npos)
+                json.replace(start, 15, std::to_string(pixmapHash));
 
-    response += "\n";
+            std::string response = "slidelayer: " + json;
 
-    std::vector<char> output;
-    output.reserve(response.size() + pixmap.size());
-    output.resize(response.size());
-    std::memcpy(output.data(), response.data(), response.size());
+            response += "\n";
 
-    if (!Png::encodeSubBufferToPNG(pixmap.data(), 0, 0, width, height, width, height, output, tileMode))
-    {
-        LOG_ERR("Failed to encode into PNG.");
-        return false;
-    }
+            output.reserve(response.size() + pixmap->size());
+            output.resize(response.size());
+            std::memcpy(output.data(), response.data(), response.size());
 
-    LOG_TRC("Sending response (" << output.size() << " bytes) for: " << std::string(output.data(), response.size() - 1));
-    sendBinaryFrame(output.data(), output.size());
-
+            if (!Png::encodeSubBufferToPNG(pixmap->data(), 0, 0, width, height, width, height, output, tileMode))
+            {
+                LOG_ERR("Failed to encode into PNG.");
+                output.resize(0);
+            }
+        });
     return true;
 }
 
@@ -2506,12 +2536,20 @@ bool ChildSession::renderSlide(const StringVector& tokens)
     assert(bufferHeight <= suggestedHeight);
 
     bool done = false;
+    SlideCompressor scomp(_docManager->getSyncPool());
     while (!done)
     {
-        success = renderNextSlideLayer(bufferWidth, bufferHeight, devicePixelRatio, done);
+        success = renderNextSlideLayer(scomp, bufferWidth, bufferHeight, devicePixelRatio, done);
         if (!success)
             break;
     }
+
+    scomp.compress([this](const std::vector<char>& output) {
+        size_t pos = Util::findInVector(output, "\n");
+        LOG_TRC("Sending response (" << output.size() << " bytes) for: " <<
+                std::string(output.data(), pos == std::string::npos ? output.size() : pos - 1));
+        sendBinaryFrame(output.data(), output.size());
+    });
 
     getLOKitDocument()->postSlideshowCleanup();
 
@@ -3861,23 +3899,23 @@ void ChildSession::loKitCallback(const int type, const std::string& payload)
 
 void ChildSession::saveLogUiBackground()
 {
-    LogUiCommands uiLog(this);
+    LogUiCommands uiLog(*this);
     uiLog.logSaveLoad("savebg", Poco::URI(getJailedFilePath()).getPath(), _logUiSaveBackGroundTimeStart);
 }
 
 void LogUiCommands::logLine(LogUiCommandsLine &line, bool isUndoChange)
 {
     // log command
-    double timeDiffStart = std::chrono::duration<double>(line._timeStart - _session->_docManager->getLogUiCmd().getKitStartTimeSec()).count();
+    double timeDiffStart = std::chrono::duration<double>(line._timeStart - _session._docManager->getLogUiCmd().getKitStartTimeSec()).count();
 
     // Load / Save event made by application will reach here.
     // In that case save without real userID
-    int userID = _session->_viewId;
-    if (_session->_clientVisibleArea.getWidth() == 0)
+    int userID = _session._viewId;
+    if (_session._clientVisibleArea.getWidth() == 0)
         userID = -1;
 
     std::stringstream strToLog;
-    strToLog << "kit=" << _session->_docManager->getDocId();
+    strToLog << "kit=" << _session._docManager->getDocId();
     strToLog << " time=" << std::fixed << std::setprecision(3) << timeDiffStart;
     if (Log::isLogUITimeEnd())
     {
@@ -3908,7 +3946,7 @@ void LogUiCommands::logLine(LogUiCommandsLine &line, bool isUndoChange)
         }
     }
 
-    _session->_docManager->getLogUiCmd().logUiCmdLine(userID, strToLog.str());
+    _session._docManager->getLogUiCmd().logUiCmdLine(userID, strToLog.str());
 
     if (!isUndoChange && line._undoChange != 0)
     {
@@ -3945,176 +3983,184 @@ void LogUiCommands::logSaveLoad(std::string cmd, const std::string & path, std::
     logLine(uiLogLine);
 }
 
+LogUiCommands::LogUiCommands(ChildSession& session, const StringVector* tokens)
+    : _session(session), _tokens(tokens)
+{
+    if (_session._isDocLoaded)
+        _document = session.getLOKitDocument();
+}
+
 LogUiCommands::~LogUiCommands()
 {
-    if (!_skipDestructor && _session->_isDocLoaded && Log::isLogUIEnabled() && _session->_clientVisibleArea.getWidth() != 0)
+    auto document = _document.lock();
+    if (!document)
+        return;
+    if (!Log::isLogUIEnabled() || _session._clientVisibleArea.getWidth() == 0)
+        return;
+    if (_tokens->empty() || _cmdToLog.find((*_tokens)[0]) == _cmdToLog.end())
+        return;
+    int& lineCount = _session._lastUiCmdLinesLoggedCount;
+    LogUiCommandsLine& line0 = _session._lastUiCmdLinesLogged[0];
+    LogUiCommandsLine& line1 = _session._lastUiCmdLinesLogged[1];
+    std::string actCmd="";
+    std::string actSubCmd="";
+    bool commandHandled = false;
+    // drop, or modify some of the commands
+    if (_tokens->equals(0, "key"))
     {
-        if (_tokens->size() > 0 && _cmdToLog.find((*_tokens)[0]) != _cmdToLog.end())
+        // Do not log key release
+        if (_tokens->equals(1, "type=up"))
+            return;
+        if (_tokens->equals(2, "char=0"))
         {
-            int& lineCount = _session->_lastUiCmdLinesLoggedCount;
-            LogUiCommandsLine& line0 = _session->_lastUiCmdLinesLogged[0];
-            LogUiCommandsLine& line1 = _session->_lastUiCmdLinesLogged[1];
-            std::string actCmd="";
-            std::string actSubCmd="";
-            bool commandHandled = false;
-            // drop, or modify some of the commands
-            if (_tokens->equals(0, "key"))
+            uint32_t keyCode=0;
+            (void)_tokens->getUInt32(3,"key",keyCode);
+            actSubCmd = "";
+            if (keyCode & 8192)
+                actSubCmd += "ctrl-";
+            if (keyCode & 4096)
+                actSubCmd += "shft-";
+            keyCode &= 4095;
+            if (keyCode >= 1024 && keyCode <= 1031)
             {
-                // Do not log key release
-                if (_tokens->equals(1, "type=up"))
-                    return;
-                if (_tokens->equals(2, "char=0"))
-                {
-                    uint32_t keyCode=0;
-                    (void)_tokens->getUInt32(3,"key",keyCode);
-                    actSubCmd = "";
-                    if (keyCode & 8192)
-                        actSubCmd += "ctrl-";
-                    if (keyCode & 4096)
-                        actSubCmd += "shft-";
-                    keyCode &= 4095;
-                    if (keyCode >= 1024 && keyCode <= 1031)
-                    {
-                        // arrow keys = 1024-1027  home/end = 1028-1029  page up/down = 1030-1031
-                        const std::vector<std::string> aNnavigationKeys = {"down","up","left","right","home","end","page-up","page-down"};
-                        actCmd = "key";
-                        actSubCmd += aNnavigationKeys[keyCode-1024];
-                    }
-                    else
-                    {
-                        return;
-                    }
-                }
-                else
-                {
-                    // if char!=0, this is probably a textinput key
-                    actCmd = "textinput";
-                }
-            }
-            else if (_tokens->equals(0, "uno"))
-            {
-                if ( std::find_if(_unoCmdToNotLog.begin(), _unoCmdToNotLog.end(), [this](std::string const &S) { return (*_tokens)[1].starts_with(S); }) != _unoCmdToNotLog.end() )
-                    return;
-                actCmd = (*_tokens)[0];
-                actSubCmd = (*_tokens)[1];
-                std::size_t pos = actSubCmd.find_first_of ('?');
-                if (pos != std::string::npos) {
-                    actSubCmd = actSubCmd.substr (0,pos);
-                }
-            }
-            else if (_tokens->equals(0, "mouse"))
-            {
-                actCmd = (*_tokens)[0];
-                if ((*_tokens)[1].starts_with("type="))
-                {
-                    actSubCmd = (*_tokens)[1].substr(5);
-
-                    // If it is a buttonup and we have a saved buttondown, than exchange it to click
-                    if (actSubCmd == "buttonup" && lineCount > 0
-                        && _session->_lastUiCmdLinesLogged[lineCount - 1]._cmd == "mouse"
-                        && _session->_lastUiCmdLinesLogged[lineCount - 1]._subCmd == "buttondown")
-                    {
-                        if (lineCount == 1)
-                        {
-                            line0._subCmd = "click";
-                            commandHandled = true;
-                        }
-                        else
-                        {
-                            // drop the previous "buttondown", and change the actual to click
-                            lineCount = 1;
-                            actSubCmd = "click";
-                            // If "buttondown" generated an undo state change, we should save it too.
-                            line0._undoChange += line1._undoChange;
-                        }
-                    }
-                }
-                else
-                {
-                    actSubCmd = (*_tokens)[1];
-                }
+                // arrow keys = 1024-1027  home/end = 1028-1029  page up/down = 1030-1031
+                const std::vector<std::string> aNnavigationKeys = {"down","up","left","right","home","end","page-up","page-down"};
+                actCmd = "key";
+                actSubCmd += aNnavigationKeys[keyCode-1024];
             }
             else
             {
-                actCmd = (*_tokens)[0];
-            }
-
-            // Here we are sure we want to log this command sometime...
-            std::chrono::steady_clock::time_point actTime = std::chrono::steady_clock::now();
-
-            // We have to check if undo-count-change happened because of it
-            int undoAct = 0;
-            int undoChg = 0;
-            undoAct = atoi(_session->getLOKitDocument()->getCommandValues(".uno:UndoCount"));
-            // If undo count decrease without an undo .uno:Undo, then it is probably a fake (when cap reached)
-            if (_lastUndoCount!=undoAct && (_lastUndoCount<undoAct || actSubCmd == ".uno:Undo"))
-            {
-                if (undoAct - _lastUndoCount > 0)
-                    undoChg = 1;
-                else
-                    undoChg = -1;
-            }
-            if (commandHandled)
-            {
-                // Now, possible only if a buttonup become click
-                line0._undoChange += undoChg;
-                line0._timeEnd = actTime;
                 return;
             }
+        }
+        else
+        {
+            // if char!=0, this is probably a textinput key
+            actCmd = "textinput";
+        }
+    }
+    else if (_tokens->equals(0, "uno"))
+    {
+        if ( std::find_if(_unoCmdToNotLog.begin(), _unoCmdToNotLog.end(), [this](std::string const &S) { return (*_tokens)[1].starts_with(S); }) != _unoCmdToNotLog.end() )
+            return;
+        actCmd = (*_tokens)[0];
+        actSubCmd = (*_tokens)[1];
+        std::size_t pos = actSubCmd.find_first_of ('?');
+        if (pos != std::string::npos) {
+            actSubCmd = actSubCmd.substr (0,pos);
+        }
+    }
+    else if (_tokens->equals(0, "mouse"))
+    {
+        actCmd = (*_tokens)[0];
+        if ((*_tokens)[1].starts_with("type="))
+        {
+            actSubCmd = (*_tokens)[1].substr(5);
 
-            // If there is a Stored command, we check if the new is mergeable
-            //  Megre if we can
-            //  Log previous and store new command, if we cannot merge
-            if (lineCount >= 2)
+            // If it is a buttonup and we have a saved buttondown, than exchange it to click
+            if (actSubCmd == "buttonup" && lineCount > 0
+                && _session._lastUiCmdLinesLogged[lineCount - 1]._cmd == "mouse"
+                && _session._lastUiCmdLinesLogged[lineCount - 1]._subCmd == "buttondown")
             {
-                // Possible only if, the stored commands are: mouse click + mouse button down
-                // but the actual is not a mouse up .. that was handled before
-                // We have to log the 1. line, and copy the 2. to the first.
-                logLine(line1);
-                line0 = line1;
-                lineCount = 1;
-            }
-            if (lineCount > 0)
-            {
-                // Can we merge?
-                if (line0._cmd == actCmd && line0._subCmd == actSubCmd)
+                if (lineCount == 1)
                 {
-                    // We can merge. We just change the last stored command
-                    line0._repeat += 1;
-                    line0._timeEnd = actTime;
-                    line0._undoChange += undoChg;
-                    return;
-                }
-                else if (line0._cmd == "mouse" && line0._subCmd == "click"
-                         && actCmd == "mouse" && actSubCmd == "buttondown")
-                {
-                    // mouse button down after a click, may become 2x click later, do not log it yet
-                    // Nothing to do here now. (lineCount == 1)
+                    line0._subCmd = "click";
+                    commandHandled = true;
                 }
                 else
                 {
-                    // We can not merge. We log the last stored command, and continue to store the actual command
-                    logLine(line0);
-                    lineCount = 0;
+                    // drop the previous "buttondown", and change the actual to click
+                    lineCount = 1;
+                    actSubCmd = "click";
+                    // If "buttondown" generated an undo state change, we should save it too.
+                    line0._undoChange += line1._undoChange;
                 }
             }
-            // Store new command
-            LogUiCommandsLine& lineAct = _session->_lastUiCmdLinesLogged[lineCount];
-            lineAct._cmd = std::move(actCmd);
-            lineAct._subCmd = std::move(actSubCmd);
-            lineAct._repeat = 1;
-            lineAct._undoChange = undoChg;
-            lineAct._timeStart = actTime;
-            lineAct._timeEnd = actTime;
-            lineCount++;
-
-            if (!Log::isLogUIMerged())
-            {
-                // If we are not to merge the commands, then log the saved command now.
-                logLine(line0);
-                lineCount = 0;
-            }
         }
+        else
+        {
+            actSubCmd = (*_tokens)[1];
+        }
+    }
+    else
+    {
+        actCmd = (*_tokens)[0];
+    }
+
+    // Here we are sure we want to log this command sometime...
+    std::chrono::steady_clock::time_point actTime = std::chrono::steady_clock::now();
+
+    // We have to check if undo-count-change happened because of it
+    int undoAct = 0;
+    int undoChg = 0;
+    undoAct = atoi(document->getCommandValues(".uno:UndoCount"));
+    // If undo count decrease without an undo .uno:Undo, then it is probably a fake (when cap reached)
+    if (_lastUndoCount!=undoAct && (_lastUndoCount<undoAct || actSubCmd == ".uno:Undo"))
+    {
+        if (undoAct - _lastUndoCount > 0)
+            undoChg = 1;
+        else
+            undoChg = -1;
+    }
+    if (commandHandled)
+    {
+        // Now, possible only if a buttonup become click
+        line0._undoChange += undoChg;
+        line0._timeEnd = actTime;
+        return;
+    }
+
+    // If there is a Stored command, we check if the new is mergeable
+    //  Megre if we can
+    //  Log previous and store new command, if we cannot merge
+    if (lineCount >= 2)
+    {
+        // Possible only if, the stored commands are: mouse click + mouse button down
+        // but the actual is not a mouse up .. that was handled before
+        // We have to log the 1. line, and copy the 2. to the first.
+        logLine(line1);
+        line0 = line1;
+        lineCount = 1;
+    }
+    if (lineCount > 0)
+    {
+        // Can we merge?
+        if (line0._cmd == actCmd && line0._subCmd == actSubCmd)
+        {
+            // We can merge. We just change the last stored command
+            line0._repeat += 1;
+            line0._timeEnd = actTime;
+            line0._undoChange += undoChg;
+            return;
+        }
+        else if (line0._cmd == "mouse" && line0._subCmd == "click"
+                 && actCmd == "mouse" && actSubCmd == "buttondown")
+        {
+            // mouse button down after a click, may become 2x click later, do not log it yet
+            // Nothing to do here now. (lineCount == 1)
+        }
+        else
+        {
+            // We can not merge. We log the last stored command, and continue to store the actual command
+            logLine(line0);
+            lineCount = 0;
+        }
+    }
+    // Store new command
+    LogUiCommandsLine& lineAct = _session._lastUiCmdLinesLogged[lineCount];
+    lineAct._cmd = std::move(actCmd);
+    lineAct._subCmd = std::move(actSubCmd);
+    lineAct._repeat = 1;
+    lineAct._undoChange = undoChg;
+    lineAct._timeStart = actTime;
+    lineAct._timeEnd = actTime;
+    lineCount++;
+
+    if (!Log::isLogUIMerged())
+    {
+        // If we are not to merge the commands, then log the saved command now.
+        logLine(line0);
+        lineCount = 0;
     }
 }
 

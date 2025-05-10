@@ -19,7 +19,6 @@
 #include <zlib.h>
 #include <zstd.h>
 #include <stdint.h>
-#include <endian.h>
 
 #include <common/HexUtil.hpp>
 #include <Log.hpp>
@@ -167,7 +166,7 @@ class DeltaGenerator {
             output[0] = _rleSize & 0xff;
             output[1] = _rleSize >> 8;
 
-#if __BYTE_ORDER != __BIG_ENDIAN || defined(IOS)
+#if __BYTE_ORDER__ != __ORDER_BIG_ENDIAN__
             memcpy(output + 2, _rleMask, sizeof(_rleMask));
 #else
             // rare machine: little-endianize the bitmask if necessary:
@@ -894,10 +893,13 @@ class DeltaGenerator {
                 oss << "tile-delta-" << loc._canonicalViewId << "-" << loc._part << "-" << loc._left << "-" << loc._top
                     << "-" << dumpedIndex - 1 << "_to_" << dumpedIndex << ".zstd";
                 path += oss.str();
-                std::ofstream tileFile(path, std::ios::binary);
-                // Skip first character which is a 'D' used to identify deltas
-                // The rest should be a zstd compressed delta
-                tileFile.write(output.data() + 1, output.size() - 1);
+                if (path.find("../") == std::string::npos && path.find("/..") == std::string::npos) // avoid funny paths to make CodeQL happy
+                {
+                    std::ofstream tileFile(path, std::ios::binary);
+                    // Skip first character which is a 'D' used to identify deltas
+                    // The rest should be a zstd compressed delta
+                    tileFile.write(output.data() + 1, output.size() - 1);
+                }
             }
         }
 

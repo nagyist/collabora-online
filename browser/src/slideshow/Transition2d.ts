@@ -83,6 +83,7 @@ abstract class TransitionBase extends SlideChangeGl {
 class Transition2d extends TransitionBase {
 	private static readonly DefaultFromColor = new Float32Array([0, 0, 0, 0]);
 	private static readonly DefaultToColor = new Float32Array([0, 0, 0, 0]);
+	private _uniformCache = new Map<string, WebGLUniformLocation | null>();
 
 	constructor(transitionParameters: TransitionParameters) {
 		super(transitionParameters);
@@ -139,6 +140,18 @@ class Transition2d extends TransitionBase {
 		gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
 	}
 
+	private getUniformLocation(name: string): WebGLUniformLocation | null {
+		if (!this.program) return null;
+
+		if (this._uniformCache.has(name)) {
+			return this._uniformCache.get(name);
+		}
+
+		const loc = this.gl.getUniformLocation(this.program, name);
+		this._uniformCache.set(name, loc);
+		return loc;
+	}
+
 	public render(nT: number, properties?: AnimatedElementRenderProperties) {
 		if (this.context.isDisposed()) return;
 
@@ -170,52 +183,29 @@ class Transition2d extends TransitionBase {
 				0,
 			);
 		} else {
-			// jscpd:ignore-start
-			let bounds: BoundsType = null;
-			let alpha = 1.0;
-			let fromFillColor = Transition2d.DefaultFromColor;
-			let toFillColor = Transition2d.DefaultToColor;
-			let fromLineColor = Transition2d.DefaultFromColor;
-			let toLineColor = Transition2d.DefaultToColor;
-			if (properties) {
-				bounds = properties.bounds;
-				alpha = properties.alpha;
-				const colorMap = properties.colorMap;
-				if (colorMap) {
-					if (colorMap.fromFillColor && colorMap.toFillColor) {
-						fromFillColor = colorMap.fromFillColor.toFloat32Array();
-						toFillColor = colorMap.toFillColor.toFloat32Array();
-					}
-					if (colorMap.fromLineColor && colorMap.toLineColor) {
-						fromLineColor = colorMap.fromLineColor.toFloat32Array();
-						toLineColor = colorMap.toLineColor.toFloat32Array();
-					}
-				}
-			}
+			const {
+				bounds,
+				alpha,
+				fromFillColor,
+				toFillColor,
+				fromLineColor,
+				toLineColor,
+			} = LayerRendererGl.computeColor(properties);
+
 			console.debug(`Transition2d.render: alpha: ${alpha}`);
 
 			this.setPositionBuffer(bounds);
-			this.gl.uniform1f(
-				this.gl.getUniformLocation(this.program, 'alpha'),
-				alpha,
-			);
+			this.gl.uniform1f(this.getUniformLocation('alpha'), alpha);
 			this.gl.uniform4fv(
-				this.gl.getUniformLocation(this.program, 'fromFillColor'),
+				this.getUniformLocation('fromFillColor'),
 				fromFillColor,
 			);
+			this.gl.uniform4fv(this.getUniformLocation('toFillColor'), toFillColor);
 			this.gl.uniform4fv(
-				this.gl.getUniformLocation(this.program, 'toFillColor'),
-				toFillColor,
-			);
-			this.gl.uniform4fv(
-				this.gl.getUniformLocation(this.program, 'fromLineColor'),
+				this.getUniformLocation('fromLineColor'),
 				fromLineColor,
 			);
-			this.gl.uniform4fv(
-				this.gl.getUniformLocation(this.program, 'toLineColor'),
-				toLineColor,
-			);
-			// jscpd:ignore-end
+			this.gl.uniform4fv(this.getUniformLocation('toLineColor'), toLineColor);
 		}
 
 		gl.activeTexture(gl.TEXTURE1);

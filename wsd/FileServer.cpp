@@ -167,7 +167,7 @@ bool isConfigAuthOk(const std::string& userProvidedUsr, const std::string& userP
     // do we have secure_password?
     if (config.has("admin_console.secure_password"))
     {
-        const std::string securePass =
+        std::string securePass =
             config.getString("admin_console.secure_password", std::string());
         if (securePass.empty())
         {
@@ -177,7 +177,7 @@ bool isConfigAuthOk(const std::string& userProvidedUsr, const std::string& userP
 
         // Extract the salt from the config
         std::vector<unsigned char> saltData;
-        StringVector tokens = StringVector::tokenize(securePass, '.');
+        StringVector tokens = StringVector::tokenize(std::move(securePass), '.');
         if (tokens.size() != 5 ||
             !tokens.equals(0, "pbkdf2") ||
             !tokens.equals(1, "sha512") ||
@@ -416,7 +416,7 @@ bool FileServerRequestHandler::isAdminLoggedIn(const HTTPRequest& request, http:
     //handles request starts with /wopi/files
     void handleWopiRequest(const HTTPRequest& request,
                            const RequestDetails &requestDetails,
-                           Poco::MemoryInputStream& message,
+                           std::istream& message,
                            const std::shared_ptr<StreamSocket>& socket)
     {
         Poco::URI requestUri(request.getURI());
@@ -509,10 +509,10 @@ bool FileServerRequestHandler::isAdminLoggedIn(const HTTPRequest& request, http:
                 fileInfo->set("UserSettings", userSettings);
             }
 
-            fileInfo->set("UserCanWrite", (requestDetails.getParam("permission") != "readonly") ? "true": "false");
+            fileInfo->set("UserCanWrite", (requestDetails.getParam("permission") != "readonly") ? true: false);
             fileInfo->set("PostMessageOrigin", postMessageOrigin);
             fileInfo->set("LastModifiedTime", localFile->getLastModifiedTime());
-            fileInfo->set("EnableOwnerTermination", "true");
+            fileInfo->set("EnableOwnerTermination", true);
 
             std::ostringstream jsonStream;
             fileInfo->stringify(jsonStream);
@@ -720,7 +720,7 @@ bool FileServerRequestHandler::isAdminLoggedIn(const HTTPRequest& request, http:
     //handles request starts with /wopi/settings
     void handleSettingsRequest(const HTTPRequest& request,
                                const std::string& etagString,
-                               Poco::MemoryInputStream& message,
+                               std::istream& message,
                                const std::shared_ptr<StreamSocket>& socket)
     {
         Poco::URI requestUri(request.getURI());
@@ -886,7 +886,7 @@ static std::string getRequestPath(const HTTPRequest& request)
 
 bool FileServerRequestHandler::handleRequest(const HTTPRequest& request,
                                              const RequestDetails& requestDetails,
-                                             Poco::MemoryInputStream& message,
+                                             std::istream& message,
                                              const std::shared_ptr<StreamSocket>& socket,
                                              ResourceAccessDetails& accessDetails)
 {
@@ -1634,7 +1634,7 @@ std::string boolToString(const bool value)
 
 FileServerRequestHandler::ResourceAccessDetails FileServerRequestHandler::preprocessFile(
     const HTTPRequest& request, http::Response& httpResponse, const RequestDetails& requestDetails,
-    Poco::MemoryInputStream& message, const std::shared_ptr<StreamSocket>& socket)
+    std::istream& message, const std::shared_ptr<StreamSocket>& socket)
 {
     const ServerURL cnxDetails(requestDetails);
 
@@ -1846,6 +1846,7 @@ FileServerRequestHandler::ResourceAccessDetails FileServerRequestHandler::prepro
     csp.appendDirective("font-src", "'self'");
     csp.appendDirective("object-src", "'self'");
     csp.appendDirective("media-src", "'self'");
+    csp.appendDirective("media-src", "blob:");
     csp.appendDirectiveUrl("media-src", cnxDetails.getWebServerUrl());
     csp.appendDirective("img-src", "'self'");
     csp.appendDirective("img-src", "data:"); // Equivalent to unsafe-inline!
@@ -2026,7 +2027,7 @@ FileServerRequestHandler::ResourceAccessDetails FileServerRequestHandler::prepro
 void FileServerRequestHandler::preprocessWelcomeFile(const HTTPRequest& request,
                                                      http::Response& httpResponse,
                                                      const RequestDetails& requestDetails,
-                                                     Poco::MemoryInputStream& message,
+                                                     std::istream& message,
                                                      const std::shared_ptr<StreamSocket>& socket)
 {
     const std::string relPath = getRequestPathname(request, requestDetails);
@@ -2073,7 +2074,7 @@ void FilePartHandler::handlePart(const Poco::Net::MessageHeader& header, std::is
 }
 
 void FileServerRequestHandler::fetchWopiSettingConfigs(const Poco::Net::HTTPRequest& request,
-                                                       Poco::MemoryInputStream& message,
+                                                       std::istream& message,
                                                        const std::shared_ptr<StreamSocket>& socket)
 {
     Poco::Net::HTMLForm form(request, message);
@@ -2148,8 +2149,8 @@ void FileServerRequestHandler::fetchWopiSettingConfigs(const Poco::Net::HTTPRequ
 }
 
 void FileServerRequestHandler::fetchSettingFile(const Poco::Net::HTTPRequest& request,
-                                                 Poco::MemoryInputStream& message,
-                                                 const std::shared_ptr<StreamSocket>& socket)
+                                                std::istream& message,
+                                                const std::shared_ptr<StreamSocket>& socket)
 {
     Poco::Net::HTMLForm form(request, message);
 
@@ -2193,7 +2194,7 @@ void FileServerRequestHandler::fetchSettingFile(const Poco::Net::HTTPRequest& re
 }
 
 void FileServerRequestHandler::deleteWopiSettingConfigs(
-    const Poco::Net::HTTPRequest& request, Poco::MemoryInputStream& message,
+    const Poco::Net::HTTPRequest& request, std::istream& message,
     const std::shared_ptr<StreamSocket>& socket)
 {
     Poco::Net::HTMLForm form(request, message);
@@ -2272,7 +2273,7 @@ void FileServerRequestHandler::deleteWopiSettingConfigs(
 }
 
 void FileServerRequestHandler::uploadFileToIntegrator(const Poco::Net::HTTPRequest& request,
-                                                      Poco::MemoryInputStream& message,
+                                                      std::istream& message,
                                                       const std::shared_ptr<StreamSocket>& socket)
 {
     FilePartHandler partHandler;
@@ -2362,7 +2363,7 @@ void FileServerRequestHandler::uploadFileToIntegrator(const Poco::Net::HTTPReque
 void FileServerRequestHandler::preprocessIntegratorAdminFile(const HTTPRequest& request,
                                                             http::Response& response,
                                                             const RequestDetails& requestDetails,
-                                                            Poco::MemoryInputStream& message,
+                                                            std::istream& message,
                                                             const std::shared_ptr<StreamSocket>& socket)
 {
     const ServerURL cnxDetails(requestDetails);
@@ -2409,6 +2410,7 @@ void FileServerRequestHandler::preprocessIntegratorAdminFile(const HTTPRequest& 
     csp.appendDirective("font-src", "'self'");
     csp.appendDirective("object-src", "'self'");
     csp.appendDirective("media-src", "'self'");
+    csp.appendDirective("media-src", "blob:");
     csp.appendDirectiveUrl("media-src", cnxDetails.getWebServerUrl());
     csp.appendDirectiveUrl("connect-src", cnxDetails.getWebServerUrl());
     csp.appendDirective("img-src", "'self'");

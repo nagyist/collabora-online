@@ -38,10 +38,10 @@
 
 #include <unistd.h>
 #include <sysexits.h>
+#include <sys/resource.h>
+#include <sys/wait.h>
 
 #include <sys/types.h>
-#include <sys/wait.h>
-#include <sys/resource.h>
 
 #include <cassert>
 #include <clocale>
@@ -107,8 +107,12 @@
 #include <wsd/Process.hpp>
 #include <common/JsonUtil.hpp>
 #include <common/FileUtil.hpp>
+
+#if !MOBILEAPP
 #include <common/JailUtil.hpp>
 #include <common/Watchdog.hpp>
+#endif
+
 #include <common/Log.hpp>
 #include <MobileApp.hpp>
 #include <Protocol.hpp>
@@ -477,8 +481,9 @@ void cleanupDocBrokers()
                     }
                 });
 
-        CONFIG_STATIC const std::size_t IdleServerSettingsTimeoutSecs =
-            ConfigUtil::getConfigValue<int>("serverside_config.idle_timeout_secs", 3600);
+        CONFIG_STATIC const std::chrono::seconds IdleServerSettingsTimeoutSecs =
+            ConfigUtil::getConfigValue<std::chrono::seconds>("serverside_config.idle_timeout_secs",
+                                                             3600);
 
         // consider shutting down unused subforkits
         for (auto it = SubForKitProcs.begin(); it != SubForKitProcs.end(); )
@@ -495,10 +500,14 @@ void cleanupDocBrokers()
             } else if (OutstandingForks[configId] > 0) {
                 LOG_DBG("subforkit " << configId << " has a pending fork underway, keep it");
                 ++it;
-            } else if (now - LastSubForKitBrokerExitTimes[configId] < std::chrono::seconds(IdleServerSettingsTimeoutSecs)) {
+            }
+            else if (now - LastSubForKitBrokerExitTimes[configId] < IdleServerSettingsTimeoutSecs)
+            {
                 LOG_DBG("subforkit " << configId << " recently used, keep it");
                 ++it;
-            } else {
+            }
+            else
+            {
                 LOG_DBG("subforkit " << configId << " is unused, dropping it");
                 LastSubForKitBrokerExitTimes.erase(configId);
                 OutstandingForks.erase(configId);
@@ -728,8 +737,8 @@ inline std::string getLaunchURI(const std::string &document, bool readonly = fal
     oss << COOLWSD::ServiceRoot;
     oss << COOLWSD_TEST_COOL_UI;
     oss << "?file_path=";
-    oss << DEBUG_ABSSRCDIR "/";
-    oss << Uri::encode(document);
+    const std::string dir = DEBUG_ABSSRCDIR "/";
+    oss << Uri::encode(dir + document);
     if (readonly)
         oss << "&permission=readonly";
 
@@ -1273,10 +1282,12 @@ void COOLWSD::setupChildRoot(const bool UseMountNamespaces)
 
 void COOLWSD::innerInitialize(Poco::Util::Application& self)
 {
-    if (!Util::isMobileApp() && geteuid() == 0 && CheckCoolUser)
+#if !MOBILEAPP
+    if (geteuid() == 0 && CheckCoolUser)
     {
         throw std::runtime_error("Do not run as root. Please run as cool user.");
     }
+#endif
 
     Util::setApplicationPath(
         Poco::Path(Poco::Util::Application::instance().commandPath()).parent().toString());
@@ -1527,10 +1538,10 @@ void COOLWSD::innerInitialize(Poco::Util::Application& self)
             {
                 fprintf(TraceEventFile, "[\n");
                 // Output a metadata event that tells that this is the WSD process
-                fprintf(TraceEventFile, "{\"name\":\"process_name\",\"ph\":\"M\",\"args\":{\"name\":\"WSD\"},\"pid\":%d,\"tid\":%ld},\n",
-                        getpid(), (long) Util::getThreadId());
-                fprintf(TraceEventFile, "{\"name\":\"thread_name\",\"ph\":\"M\",\"args\":{\"name\":\"Main\"},\"pid\":%d,\"tid\":%ld},\n",
-                        getpid(), (long) Util::getThreadId());
+                fprintf(TraceEventFile, "{\"name\":\"process_name\",\"ph\":\"M\",\"args\":{\"name\":\"WSD\"},\"pid\":%ld,\"tid\":%ld},\n",
+                        Util::getProcessId(), Util::getThreadId());
+                fprintf(TraceEventFile, "{\"name\":\"thread_name\",\"ph\":\"M\",\"args\":{\"name\":\"Main\"},\"pid\":%ld,\"tid\":%ld},\n",
+                        Util::getProcessId(), Util::getThreadId());
             }
         }
     }
@@ -1714,6 +1725,7 @@ void COOLWSD::innerInitialize(Poco::Util::Application& self)
             Util::forcedExit(EX_OK);
         }
 #endif
+
         if (ChildRoot[ChildRoot.size() - 1] != '/')
             ChildRoot += '/';
 
@@ -1725,9 +1737,11 @@ void COOLWSD::innerInitialize(Poco::Util::Application& self)
         CleanupChildRoot = ChildRoot;
 
         // Encode the process id into the path for parallel re-use of jails/
-        ChildRoot += std::to_string(getpid()) + '-' + Util::rng::getHexString(8) + '/';
+        ChildRoot += std::to_string(Util::getProcessId()) + '-' + Util::rng::getHexString(8) + '/';
 
-        LOG_INF("Creating childroot: " + ChildRoot);
+        LOG_DBG("Normalizing childroot: " << ChildRoot);
+        ChildRoot = Poco::Path(ChildRoot).makeDirectory().makeAbsolute().toString();
+        LOG_DBG("Childroot: " << ChildRoot);
     }
 
 #if !MOBILEAPP
@@ -1785,6 +1799,8 @@ void COOLWSD::innerInitialize(Poco::Util::Application& self)
         UseMountNamespaces = false;
     }
 
+    LOG_INF("Creating childroot: [" << ChildRoot << "] with" << (UseMountNamespaces ? "" : "out")
+                                    << " mount-namespaces");
     setupChildRoot(UseMountNamespaces);
 
     LOG_DBG("FileServerRoot before config: " << FileServerRoot);
@@ -2137,6 +2153,8 @@ void COOLWSD::innerInitialize(Poco::Util::Application& self)
     StorageBase::initialize();
 
 #if !MOBILEAPP
+
+#ifdef __linux__
     // Check for smaps_rollup bug where rewinding and rereading gives
     // bogus doubled results
     if (FILE* fp = fopen("/proc/self/smaps_rollup", "r"))
@@ -2154,6 +2172,7 @@ void COOLWSD::innerInitialize(Poco::Util::Application& self)
         }
         fclose(fp);
     }
+#endif
 
     ServerApplication::initialize(self);
 
@@ -3095,7 +3114,9 @@ private:
 
             _pid = pid;
             _socketFD = socket->getFD();
+#if !MOBILEAPP
             child->setSMapsFD(socket->getIncomingFD(SharedFDType::SMAPS));
+#endif
             _childProcess = child; // weak
 
             addNewChild(std::move(child));
@@ -3443,9 +3464,9 @@ private:
         }
 #endif
 #else
-        constexpr int DEFAULT_MASTER_PORT_NUMBER = 9981;
+        constexpr int UNUSED_PORT_NUMBER = 0;
         std::shared_ptr<ServerSocket> socket
-            = ServerSocket::create(ServerSocket::Type::Public, DEFAULT_MASTER_PORT_NUMBER,
+            = ServerSocket::create(ServerSocket::Type::Public, UNUSED_PORT_NUMBER,
                                    ClientPortProto, std::chrono::steady_clock::now(), *PrisonerPoll, factory);
 
         COOLWSD::prisonerServerSocketFD = socket->getFD();
@@ -3493,6 +3514,7 @@ private:
                                           now, *WebServerPoll, factory);
         }
 
+#if !MOBILEAPP
         if (!socket)
         {
             LOG_FTL("Failed to listen on Server port(s) (" << firstPortNumber << '-'
@@ -3500,7 +3522,6 @@ private:
             Util::forcedExit(EX_SOFTWARE);
         }
 
-#if !MOBILEAPP
         LOG_INF('#' << socket->getFD() << " Listening to client connections on port "
                     << ClientPortNumber);
 #else
@@ -3649,7 +3670,9 @@ int COOLWSD::innerMain()
     // allocate port & hold temporarily.
     std::shared_ptr<ServerSocket> serverPort = Server->findClientPort();
 
+#if !MOBILEAPP
     TmpFontDir = ChildRoot + JailUtil::CHILDROOT_TMP_INCOMING_PATH;
+#endif
 
     // Start the internal prisoner server and spawn forkit,
     // which in turn forks first child.
@@ -3751,9 +3774,9 @@ int COOLWSD::innerMain()
 #endif
 
 #if !MOBILEAPP && ENABLE_DEBUG
+    const std::string postMessageFilePath = Uri::encode(DEBUG_ABSSRCDIR "/test/samples/writer-edit.fodt");
     const std::string postMessageURI =
-        getServiceURI("/browser/dist/framed.doc.html?file_path=" DEBUG_ABSSRCDIR
-                      "/test/samples/writer-edit.fodt");
+        getServiceURI("/browser/dist/framed.doc.html?file_path=" + postMessageFilePath);
     std::ostringstream oss;
     std::ostringstream ossRO;
     oss << "\nLaunch one of these in your browser:\n\n"
@@ -3764,8 +3787,14 @@ int COOLWSD::innerMain()
     {
         if (i.find("-edit") != std::string::npos)
         {
-            oss   << "    " << i << "\t" << getLaunchURI(std::string("test/samples/") + i) << "\n";
-            ossRO << "    " << i << "\t" << getLaunchURI(std::string("test/samples/") + i, true) << "\n";
+            std::string padded(i);
+            constexpr int width = 22;
+            if (padded.size() < width)
+            {
+                padded.insert(padded.size(), width - padded.size(), ' ');
+            }
+            oss   << "    " << padded << getLaunchURI(std::string("test/samples/") + i) << "\n";
+            ossRO << "    " << padded << getLaunchURI(std::string("test/samples/") + i, true) << "\n";
         }
     }
 
@@ -3801,6 +3830,7 @@ int COOLWSD::innerMain()
 #if defined(M_TRIM_THRESHOLD)
     LOG_DBG("trimming memory post startup");
     malloc_trim(0);
+    time_t prevTrimTrigger = 0;
 #endif
 
     SigUtil::addActivity("coolwsd running");
@@ -3850,6 +3880,25 @@ int COOLWSD::innerMain()
             processFetchUpdate(mainWait);
             stampFetch = timeNow;
         }
+
+#if defined(M_TRIM_THRESHOLD)
+        // if Admin hasn't seen any document activity for over 10 mins them malloc_trim
+        constexpr time_t idleTrimCheck(10 * 60);
+
+        const time_t lastAdminActivity = Admin::instance().getLastActivityTime();
+        if (lastAdminActivity != prevTrimTrigger)
+        {
+            const time_t adminIdle = time(nullptr) - lastAdminActivity;
+            if (adminIdle > idleTrimCheck)
+            {
+                LOG_DBG("trimming memory on idle");
+                malloc_trim(0);
+                // Don't bother repeating until LastActivityTime changes.
+                prevTrimTrigger = lastAdminActivity;
+            }
+        }
+#endif
+
 #endif
 
 #if ENABLE_DEBUG && !MOBILEAPP
@@ -3869,8 +3918,10 @@ int COOLWSD::innerMain()
 
     SigUtil::addActivity("shutting down");
 
+#if !MOBILEAPP
     // Lots of polls will stop; stop watching them first.
     SocketPoll::PollWatchdog.reset();
+#endif
 
     // Stop the listening to new connections
     // and wait until sockets close.
@@ -3894,12 +3945,14 @@ int COOLWSD::innerMain()
 
     // atexit handlers tend to free Admin before Documents
     LOG_INF("Exiting. Cleaning up lingering documents.");
+
 #if !MOBILEAPP
     if (remoteFontConfigThread)
     {
         LOG_DBG("Stopping remote font config thread");
         remoteFontConfigThread->stop();
     }
+#endif
 
     if (!SigUtil::getShutdownRequestFlag())
     {
@@ -3908,7 +3961,6 @@ int COOLWSD::innerMain()
                 "now.");
         SigUtil::requestShutdown();
     }
-#endif
 
     SigUtil::addActivity("wait save & close");
 
@@ -4042,6 +4094,8 @@ int COOLWSD::innerMain()
     SigUtil::addActivity("finished with status " + std::to_string(returnValue));
 
     return returnValue;
+#else // IOS
+    return 0;
 #endif
 }
 
@@ -4106,10 +4160,6 @@ void COOLWSD::cleanup([[maybe_unused]] int returnValue)
 
 int COOLWSD::main(const std::vector<std::string>& /*args*/)
 {
-#if MOBILEAPP && !defined IOS
-    SigUtil::resetTerminationFlags();
-#endif
-
     int returnValue = EXIT_SOFTWARE;
 
     try {
@@ -4253,12 +4303,16 @@ void dump_state()
 
 #if !MOBILEAPP
     Admin::dumpMetrics();
-#endif
 
     std::lock_guard<std::mutex> docBrokerLock(DocBrokersMutex);
     std::lock_guard<std::mutex> newChildLock(NewChildrenMutex);
     forwardSignal(SIGUSR1);
+#endif
 }
+
+#if !MOBILEAPP
+
+// The intent is that this function can be called from a debugger. It is not used otherwise.
 
 void lslr_childroot()
 {
@@ -4267,8 +4321,11 @@ void lslr_childroot()
     std::cout << std::flush;
 }
 
+#endif
+
 void forwardSigUsr2()
 {
+#if !MOBILEAPP
     LOG_TRC("forwardSigUsr2");
 
     if (Util::isKitInProcess())
@@ -4278,6 +4335,7 @@ void forwardSigUsr2()
     std::lock_guard<std::mutex> newChildLock(NewChildrenMutex);
 
     forwardSignal(SIGUSR2);
+#endif
 }
 
 void forwardSignal(const int signum)
@@ -4293,7 +4351,6 @@ void forwardSignal(const int signum)
         LOG_INF("Sending " << name << " to forkit " << COOLWSD::ForKitProcId);
         ::kill(COOLWSD::ForKitProcId, signum);
     }
-#endif
 
     for (const auto& child : NewChildren)
     {
@@ -4313,6 +4370,7 @@ void forwardSignal(const int signum)
             ::kill(docBroker->getPid(), signum);
         }
     }
+#endif
 }
 
 // Avoid this in the Util::isFuzzing() case because libfuzzer defines its own main().

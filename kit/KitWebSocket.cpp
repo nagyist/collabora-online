@@ -16,9 +16,10 @@
 #include <config.h>
 
 #include <Poco/URI.h>
-#include <sysexits.h> // EX_OK
 
+#include <sysexits.h>
 #include <sys/wait.h>
+
 #include <sys/types.h>
 
 #include <common/Anonymizer.hpp>
@@ -99,7 +100,7 @@ void KitWebSocketHandler::handleMessage(const std::vector<char>& data)
             // We can do this only after creating the Document object.
             TraceEvent::emitOneRecordingIfEnabled(
                 std::string("{\"name\":\"process_name\",\"ph\":\"M\",\"args\":{\"name\":\"") +
-                "Kit-" + docId + "\"},\"pid\":" + std::to_string(getpid()) +
+                "Kit-" + docId + "\"},\"pid\":" + std::to_string(Util::getProcessId()) +
                 ",\"tid\":" + std::to_string(Util::getThreadId()) + "},\n");
         }
 
@@ -229,9 +230,9 @@ void BgSaveChildWebSocketHandler::onDisconnect()
 {
     LOG_TRC("Disconnected background web socket to parent kit");
     UnitKit::get().preBackgroundSaveExit();
-
+#if !MOBILEAPP
     Document::shutdownBackgroundWatchdog();
-
+#endif
     Util::forcedExit(EX_OK);
 }
 
@@ -342,13 +343,14 @@ void BgSaveParentWebSocketHandler::onDisconnect()
 {
     LOG_TRC("Disconnected background web socket to child " << _childPid);
 
+#if !MOBILEAPP
     // reap and de-zombify children.
     const auto [ret, sig] = SigUtil::reapZombieChild(_childPid, /*sighandler=*/false);
     if (sig)
         reportFailedSave(std::string("crashed with status ") + SigUtil::signalName(sig));
     else if (ret <= 0)
         LOG_WRN("Background save process disconnected but not terminated " << _childPid);
-
+#endif
     if (!_saveCompleted)
         reportFailedSave("terminated without saving");
 }

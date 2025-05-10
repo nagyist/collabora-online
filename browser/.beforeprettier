@@ -156,7 +156,6 @@
 /src/layer/tile/CanvasTileLayer.js
 /src/canvas/sections/CommentListSection.ts
 /src/canvas/sections/CalcGridSection.ts
-/src/canvas/sections/SplitSection.ts
 /src/canvas/sections/PixelGridSection.ts
 /src/canvas/sections/CommentSection.ts
 /src/canvas/sections/CursorHeaderSection.ts
@@ -179,7 +178,6 @@
 /src/layer/vector/CPolyline.ts
 /src/layer/vector/CPolyUtil.ts
 /src/layer/vector/CRectangle.ts
-/src/layer/vector/CSplitterLine.ts
 /src/layer/vector/Path.Drag.js
 /src/layer/vector/Path.Drag.Transform.js
 /src/layer/vector/Path.js

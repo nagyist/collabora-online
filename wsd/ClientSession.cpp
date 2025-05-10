@@ -116,10 +116,10 @@ ClientSession::ClientSession(
     TraceEvent::emitOneRecordingIfEnabled("{\"name\":\"process_name\",\"ph\":\"M\",\"args\":{\"name\":\""
                                           "cool-" + id
                                           + "\"},\"pid\":"
-                                          + std::to_string(getpid() + SYNTHETIC_COOL_PID_OFFSET)
+                                          + std::to_string(Util::getProcessId() + SYNTHETIC_COOL_PID_OFFSET)
                                           + ",\"tid\":1},\n");
     TraceEvent::emitOneRecordingIfEnabled("{\"name\":\"thread_name\",\"ph\":\"M\",\"args\":{\"name\":\"JS\"},\"pid\":"
-                                          + std::to_string(getpid() + SYNTHETIC_COOL_PID_OFFSET)
+                                          + std::to_string(Util::getProcessId() + SYNTHETIC_COOL_PID_OFFSET)
                                           + ",\"tid\":1},\n");
 
     _browserSettingsJSON = new Poco::JSON::Object();
@@ -619,7 +619,7 @@ bool ClientSession::_handleInput(const char *buffer, int length)
                                                           + ",\"ts\":"
                                                           + std::to_string(ts + _performanceCounterEpoch)
                                                           + ",\"pid\":"
-                                                          + std::to_string(getpid() + SYNTHETIC_COOL_PID_OFFSET)
+                                                          + std::to_string(Util::getProcessId() + SYNTHETIC_COOL_PID_OFFSET)
                                                           + ",\"tid\":1},\n");
                     }
                     // Should the first getTokenUInt64()'s return value really
@@ -637,7 +637,7 @@ bool ClientSession::_handleInput(const char *buffer, int length)
                                                           + ",\"ts\":"
                                                           + std::to_string(ts + _performanceCounterEpoch)
                                                           + ",\"pid\":"
-                                                          + std::to_string(getpid() + SYNTHETIC_COOL_PID_OFFSET)
+                                                          + std::to_string(Util::getProcessId() + SYNTHETIC_COOL_PID_OFFSET)
                                                           + ",\"tid\":"
                                                           + std::to_string(tid)
                                                           + ",\"id\":"
@@ -654,7 +654,7 @@ bool ClientSession::_handleInput(const char *buffer, int length)
                                                           + ",\"ts\":"
                                                           + std::to_string(ts + _performanceCounterEpoch)
                                                           + ",\"pid\":"
-                                                          + std::to_string(getpid() + SYNTHETIC_COOL_PID_OFFSET)
+                                                          + std::to_string(Util::getProcessId() + SYNTHETIC_COOL_PID_OFFSET)
                                                           + ",\"tid\":1"
                                                             ",\"dur\":"
                                                           + std::to_string(dur)
@@ -2683,8 +2683,8 @@ bool ClientSession::handleKitToClientMessage(const std::shared_ptr<Message>& pay
             {
                 const Poco::Dynamic::Var result = parser.parse(stringJSON);
                 const auto& object = result.extract<Poco::JSON::Object::Ptr>();
-                const std::string rectangle = object->get("rectangle").toString();
-                StringVector rectangleTokens(StringVector::tokenize(rectangle, ','));
+                std::string rectangle = object->get("rectangle").toString();
+                StringVector rectangleTokens(StringVector::tokenize(std::move(rectangle), ','));
                 int x = 0, y = 0, w = 0, h = 0;
                 if (rectangleTokens.size() > 2 &&
                     stringToInteger(rectangleTokens[0], x) &&
@@ -2877,6 +2877,7 @@ void ClientSession::abortConversion(const std::shared_ptr<DocumentBroker>& docBr
 {
     assert(_isConvertTo && "Expected convert-to context");
 
+    LOG_DBG("Conversion request of [" << docBroker->getDocKey() << "] failed: " << errorKind);
     if (!saveAsSocket)
         LOG_ERR("Error saveas socket missing in isConvertTo mode");
     else

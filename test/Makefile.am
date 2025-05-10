@@ -17,11 +17,6 @@ endif
 AM_CXXFLAGS = $(CPPUNIT_CFLAGS) -DTDOC=\"$(abs_top_srcdir)/test/data\" -DTDIST=\"$(DIST_FOLDER)\" \
 	-I${top_srcdir}/common -I${top_srcdir}/net -I${top_srcdir}/wsd -I${top_srcdir}/kit \
 	-I${top_srcdir} -I${top_srcdir}/test \
-	-DCOOLWSD_DATADIR='"@COOLWSD_DATADIR@"' \
-	-DCOOLWSD_CONFIGDIR='"@COOLWSD_CONFIGDIR@"' \
-	-DCOOLWSD_LOGLEVEL='"@COOLWSD_LOGLEVEL@"' \
-	-DDEBUG_ABSSRCDIR='"@abs_srcdir@"' \
-	-DNUM_PRESPAWN_CHILDREN='"@NUM_PRESPAWN_CHILDREN@"' \
 	${include_paths}
 
 # These are ordered by how long each takes to run.
@@ -32,6 +27,7 @@ AM_CXXFLAGS = $(CPPUNIT_CFLAGS) -DTDOC=\"$(abs_top_srcdir)/test/data\" -DTDIST=\
 # 'Finished in' in the `make check` output.
 # When adding new tests, please maintain order.
 all_la_unit_tests = \
+	unit-invalidation.la \
 	unit-httpws.la \
 	unit-perf.la \
 	unit-wopi-async-slow.la \
@@ -157,17 +153,21 @@ common_sources = \
 	../common/ConfigUtil.cpp \
 	../common/DummyTraceEventEmitter.cpp \
 	../common/FileUtil.cpp \
+	../common/FileUtil-unix.cpp \
 	../common/Log.cpp \
 	../common/Protocol.cpp \
+	../common/RegexUtil.cpp \
 	../common/Session.cpp \
-	../common/SigUtil.cpp \
+	../common/SigUtil-server.cpp \
 	../common/Simd.cpp \
 	../common/SpookyV2.cpp \
 	../common/StringVector.cpp \
 	../common/TraceEvent.cpp \
 	../common/Unit.cpp \
+	../common/Unit-server.cpp \
 	../common/Uri.cpp \
 	../common/Util-server.cpp \
+	../common/Util-unix.cpp \
 	../common/Util.cpp \
 	../kit/KitQueue.cpp \
 	../kit/LogUI.cpp \
@@ -200,7 +200,7 @@ unit_base_la_LIBADD += -lssl -lcrypto
 endif
 
 fakesockettest_CPPFLAGS = -g
-fakesockettest_SOURCES = fakesockettest.cpp  ../net/FakeSocket.cpp ../common/DummyTraceEventEmitter.cpp ../common/Log.cpp ../common/Util.cpp ../common/Util-server.cpp
+fakesockettest_SOURCES = fakesockettest.cpp  ../net/FakeSocket.cpp ../common/DummyTraceEventEmitter.cpp ../common/Log.cpp ../common/Util.cpp ../common/Util-server.cpp ../common/Util-unix.cpp
 fakesockettest_LDADD = $(CPPUNIT_LIBS)
 
 # old-style unit tests - bootstrapped via UnitClient
@@ -313,6 +313,8 @@ unit_synthetic_lok_la_SOURCES = UnitSyntheticLok.cpp
 unit_synthetic_lok_la_LIBADD = $(CPPUNIT_LIBS)
 unit_rendering_options_la_SOURCES = UnitRenderingOptions.cpp
 unit_rendering_options_la_LIBADD = $(CPPUNIT_LIBS)
+unit_invalidation_la_SOURCES = UnitInvalidation.cpp
+unit_invalidation_la_LIBADD = $(CPPUNIT_LIBS)
 unit_password_protected_la_SOURCES = UnitPasswordProtected.cpp
 unit_password_protected_la_LIBADD = $(CPPUNIT_LIBS)
 unit_render_search_result_la_SOURCES = UnitRenderSearchResult.cpp

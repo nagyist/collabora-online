@@ -79,15 +79,16 @@ L.Control.JSDialog = L.Control.extend({
 
 	close: function(id, sendCloseEvent) {
 		if (id !== undefined && this.dialogs[id]) {
-			if (!sendCloseEvent && this.dialogs[id].overlay && !this.dialogs[id].isSubmenu) {
+			const dialog = this.dialogs[id];
+			if (!sendCloseEvent && dialog.overlay && !dialog.isSubmenu) {
 				app.layoutingService.appendLayoutingTask(
-					() => { L.DomUtil.remove(this.dialogs[id].overlay); });
+					() => { L.DomUtil.remove(dialog.overlay); });
 			}
 
-			if (this.dialogs[id].timeoutId)
-				clearTimeout(this.dialogs[id].timeoutId);
+			if (dialog.timeoutId)
+				clearTimeout(dialog.timeoutId);
 
-			if (this.dialogs[id].isPopup)
+			if (dialog.isPopup)
 				this.closePopover(id, sendCloseEvent);
 			else
 				this.closeDialog(id, sendCloseEvent);
@@ -171,11 +172,18 @@ L.Control.JSDialog = L.Control.extend({
 	},
 
 	focusToLastElement: function(id) {
+		const dialog = this.dialogs[id];
 		app.layoutingService.appendLayoutingTask(() => {
+			if (!dialog.lastFocusedElement) {
+				this.map.focus();
+				return;
+			}
+
 			try {
-				this.dialogs[id].lastFocusedElement.focus();
+				dialog.lastFocusedElement.focus();
 			}
 			catch (error) {
+				console.debug('Cannot focus last element in dialog with id: ' + id);
 				this.map.focus();
 			}
 		});
@@ -218,9 +226,16 @@ L.Control.JSDialog = L.Control.extend({
 
 		app.layoutingService.appendLayoutingTask(() => {
 			L.DomUtil.addClass(container, 'fadeout');
-			container.onanimationend = () => { instance.that.close(instance.id, false); };
+
+			let timeoutId = null;
+			const finallyClose = () => {
+				instance.that.close(instance.id, false);
+				clearTimeout(timeoutId);
+			};
+
+			container.onanimationend = finallyClose;
 			// be sure it will be removed if onanimationend will not be executed
-			setTimeout(() => { instance.that.close(instance.id, false); }, 700);
+			timeoutId = setTimeout(finallyClose, 700);
 		});
 	},
 
@@ -243,7 +258,7 @@ L.Control.JSDialog = L.Control.extend({
 			if (instance.cancellable) {
 				// dropdowns are online-only components, don't exist in core
 				var hasToNotifyServer = !instance.isDropdown;
-				overlay.onclick = function () { this.close(instance.id, hasToNotifyServer); }.bind(this);
+				overlay.onclick = () => { this.close(instance.id, hasToNotifyServer); };
 			}
 		}
 		instance.overlay = overlay;
@@ -277,7 +292,7 @@ L.Control.JSDialog = L.Control.extend({
 			L.DomUtil.addClass(instance.container, 'collapsed');
 
 		// prevent from reloading
-		instance.form.addEventListener('submit', function (event) { event.preventDefault(); });
+		instance.form.addEventListener('submit', (event) => { event.preventDefault(); });
 
 		instance.defaultButtonId = this._getDefaultButtonId(instance.children);
 
@@ -300,7 +315,9 @@ L.Control.JSDialog = L.Control.extend({
 			var title = L.DomUtil.create('h2', 'ui-dialog-title', instance.titlebar);
 			title.innerText = instance.title;
 			instance.titleCloseButton = L.DomUtil.create('button', 'ui-button ui-corner-all ui-widget ui-button-icon-only ui-dialog-titlebar-close', instance.titlebar);
-			instance.titleCloseButton.setAttribute('aria-label', _('Close dialog'));
+			const titleCloseButtonText = _('Close dialog');
+			instance.titleCloseButton.setAttribute('aria-label', titleCloseButtonText);
+			instance.titleCloseButton.setAttribute('title', titleCloseButtonText);
 			instance.titleCloseButton.tabIndex = '0';
 			L.DomUtil.create('span', 'ui-button-icon ui-icon ui-icon-closethick', instance.titleCloseButton);
 		}
@@ -356,7 +373,7 @@ L.Control.JSDialog = L.Control.extend({
 	},
 
 	addHandlers: function(instance) {
-		var onInput = function(ev) {
+		var onInput = (ev) => {
 			if (ev.isFirst)
 				instance.that.draggingObject = instance.that.dialogs[instance.id];
 
@@ -372,13 +389,13 @@ L.Control.JSDialog = L.Control.extend({
 		};
 
 		if (instance.haveTitlebar) {
-			instance.titleCloseButton.onclick = function() {
+			instance.titleCloseButton.onclick = () => {
 				instance.that.close(instance.id, true);
 			};
 		}
 
 		if (instance.nonModal && instance.haveTitlebar) {
-			instance.titleCloseButton.onclick = function() {
+			instance.titleCloseButton.onclick = () => {
 				var newestDialog = Math.max.apply(null,
 					Object.keys(instance.that.dialogs).map(function(i) { return parseInt(i);}));
 				if (newestDialog > parseInt(instance.id))
@@ -450,7 +467,7 @@ L.Control.JSDialog = L.Control.extend({
 			console.error('cannot get focus for widget: "' + instance.init_focus_id + '"');
 
 		if (instance.isDropdown && instance.isSubmenu) {
-			instance.container.addEventListener('mouseleave', function () {
+			instance.container.addEventListener('mouseleave', () => {
 				instance.builder.callback('combobox', 'hidedropdown', {id: instance.id}, null, instance.builder);
 			});
 		}
@@ -816,7 +833,7 @@ L.Control.JSDialog = L.Control.extend({
 			this.dialogs[instance.id] = instance;
 
 			if (instance.isSnackbar && instance.snackbarTimeout > 0) {
-				instance.timeoutId = setTimeout(function () { app.map.uiManager.closeSnackbar(); }, instance.snackbarTimeout);
+				instance.timeoutId = setTimeout(() => { app.map.uiManager.closeSnackbar(); }, instance.snackbarTimeout);
 			}
 		}
 	},

@@ -13,10 +13,6 @@ AM_CPPFLAGS = \
 	-I$(top_srcdir)/wsd \
 	-I@LOBUILDDIR@/workdir/UnpackedTarball/libpng \
 	-I@LOBUILDDIR@/workdir/UnpackedTarball/zlib \
-	-DCOOLWSD_CONFIGDIR='"@COOLWSD_CONFIGDIR@"' \
-	-DCOOLWSD_LOGLEVEL='"@COOLWSD_LOGLEVEL@"' \
-	-DDEBUG_ABSSRCDIR='"@abs_srcdir@"' \
-	-DNUM_PRESPAWN_CHILDREN='"@NUM_PRESPAWN_CHILDREN@"' \
 	-DMOBILEAPP=1
 
 bin_PROGRAMS = online
@@ -33,7 +29,7 @@ online_SOURCES = \
 	../common/Protocol.cpp \
 	../common/StringVector.cpp \
 	../common/Session.cpp \
-	../common/SigUtil.cpp \
+	../common/SigUtil-mobile.cpp \
 	../common/Simd.cpp \
 	../common/SpookyV2.cpp \
 	../common/Unit.cpp \

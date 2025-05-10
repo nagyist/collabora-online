@@ -86,11 +86,7 @@ if ENABLE_SSL
 include_paths += ${OPENSSL_CFLAGS}
 endif
 
-AM_CPPFLAGS = -pthread -DCOOLWSD_DATADIR='"@COOLWSD_DATADIR@"' \
-	      -DCOOLWSD_CONFIGDIR='"@COOLWSD_CONFIGDIR@"' \
-	      -DCOOLWSD_LOGLEVEL='"@COOLWSD_LOGLEVEL@"' \
-	      -DDEBUG_ABSSRCDIR='"@abs_srcdir@"' \
-	      -DNUM_PRESPAWN_CHILDREN='"@NUM_PRESPAWN_CHILDREN@"' \
+AM_CPPFLAGS = -pthread \
 	      ${include_paths}
 
 if !ENABLE_DEBUG
@@ -115,6 +111,7 @@ AM_ETAGSFLAGS = --c++-kinds=+p --fields=+iaS --extra=+q -R --totals=yes --exclud
 AM_CTAGSFLAGS = $(AM_ETAGSFLAGS)
 
 shared_sources = common/FileUtil.cpp \
+                 common/FileUtil-unix.cpp \
                  common/JailUtil.cpp \
                  common/Log.cpp \
                  common/Protocol.cpp \
@@ -122,13 +119,16 @@ shared_sources = common/FileUtil.cpp \
                  common/Session.cpp \
                  common/Seccomp.cpp \
                  common/MobileApp.cpp \
-                 common/TraceEvent.cpp \
-                 common/SigUtil.cpp \
+                 common/RegexUtil.cpp \
+                 common/SigUtil-server.cpp \
                  common/SpookyV2.cpp \
+                 common/TraceEvent.cpp \
                  common/Unit.cpp \
+                 common/Unit-server.cpp \
                  common/Uri.cpp \
                  common/Util.cpp \
                  common/Util-server.cpp \
+                 common/Util-unix.cpp \
                  common/ConfigUtil.cpp \
                  common/Authorization.cpp \
                  common/CommandControl.cpp \
@@ -201,7 +201,8 @@ connect_SOURCES = tools/Connect.cpp \
                   common/Protocol.cpp \
                   common/StringVector.cpp \
                   common/Util.cpp \
-                  common/Util-server.cpp
+                  common/Util-server.cpp \
+                  common/Util-unix.cpp
 
 lokitclient_SOURCES = common/Log.cpp \
                       common/DummyTraceEventEmitter.cpp \
@@ -210,7 +211,8 @@ lokitclient_SOURCES = common/Log.cpp \
                       common/StringVector.cpp \
                       common/TraceEvent.cpp \
                       common/Util.cpp \
-                      common/Util-server.cpp
+                      common/Util-server.cpp \
+                      common/Util-unix.cpp
 
 noinst_LIBRARIES = libsimd.a
 libsimd_a_SOURCES = kit/DeltaSimd.c
@@ -299,7 +301,8 @@ clientnb_SOURCES = net/clientnb.cpp \
                    common/Log.cpp \
                    common/StringVector.cpp \
                    common/Util.cpp \
-                   common/Util-server.cpp
+                   common/Util-server.cpp \
+                   common/Util-unix.cpp
 
 coolmount_SOURCES = tools/mount.cpp \
                     common/CoolMount.cpp
@@ -312,7 +315,9 @@ coolbench_SOURCES = tools/Benchmark.cpp \
                     common/StringVector.cpp \
                     common/Util.cpp \
                     common/Util-server.cpp \
+                    common/Util-unix.cpp \
                     common/Simd.cpp
+
 coolbench_LDADD = libsimd.a
 
 coolconvert_SOURCES = tools/Tool.cpp
@@ -332,6 +337,7 @@ coolconfig_SOURCES = tools/Config.cpp \
                     common/Log.cpp \
                     common/StringVector.cpp \
                     common/Util-server.cpp \
+		     common/Util-unix.cpp \
                     common/Util.cpp
 
 coolsocketdump_SOURCES = tools/WebSocketDump.cpp \
@@ -385,6 +391,7 @@ shared_headers = common/Anonymizer.hpp \
                  common/LangUtil.hpp \
                  common/Log.hpp \
                  common/Protocol.hpp \
+                 common/RegexUtil.hpp \
                  common/StateEnum.hpp \
                  common/StringVector.hpp \
                  common/Seccomp.hpp \
@@ -435,6 +442,7 @@ kit_headers = kit/ChildSession.hpp \
               kit/KitHelper.hpp \
               kit/KitWebSocket.hpp \
               kit/SetupKitEnvironment.hpp \
+	      kit/SlideCompressor.hpp \
               kit/StateRecorder.hpp \
               kit/Watermark.hpp
 
@@ -469,7 +477,7 @@ dist-hook:
 EXTRA_DIST = discovery.xml \
              favicon.ico \
              cool-sbom-template.spdx.json \
-             coolkitconfig.xcu \
+             coolkitconfig.xcu.in \
              coolwsd.spec \
              coolwsd.xml.in \
              coolwsd.service \

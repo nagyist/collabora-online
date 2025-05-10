@@ -134,8 +134,8 @@ RequestDetails::RequestDetails(const std::string& wopiSrc, const std::vector<std
 void RequestDetails::dehexify()
 {
     // For now, we only hexify cool/ URLs.
-    constexpr auto Prefix = "cool/0x";
-    constexpr auto PrefixLen = sizeof(Prefix) - 1;
+    constexpr std::string_view Prefix = "cool/0x";
+    constexpr auto PrefixLen = Prefix.size();
 
     const auto hexPos = _uriString.find(Prefix);
     if (hexPos != std::string::npos)
@@ -245,7 +245,7 @@ void RequestDetails::processURI()
     if (posLastWS != std::string::npos)
     {
         std::string lastWS = uriRes.substr(posLastWS);
-        const auto proxyTokens = StringVector::tokenize(lastWS, '/');
+        const auto proxyTokens = StringVector::tokenize(std::move(lastWS), '/');
         if (proxyTokens.size() > 1)
         {
             _fields[Field::SessionId] = proxyTokens[1];

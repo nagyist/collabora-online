@@ -27,6 +27,7 @@
 #include <chrono>
 #include <fstream>
 #include <mutex>
+#include <set>
 
 std::mutex CacheMutex;
 std::string CachePath;
@@ -45,18 +46,21 @@ void Cache::initialize(const std::string& path)
     // We are initialized at this point.
     CachePath = path;
 
-    MaxAgeMins = std::chrono::minutes(ConfigUtil::getConfigValue<std::size_t>("cache_files.expiry_min", 3000));
+    MaxAgeMins = ConfigUtil::getConfigValue<std::chrono::minutes>("cache_files.expiry_min", 3000);
 
     clearOutdatedConfigs();
 }
 
 std::string Cache::getConfigId(const std::string& uri)
 {
-    Poco::URI settingsUri(uri);
-    std::string sourcePrefix = settingsUri.getScheme() +
-                               '_' + settingsUri.getAuthority();
-    std::string sourcePath = settingsUri.getPath();
-    return sourcePrefix + sourcePath;
+    const Poco::URI settingsUri(uri);
+    std::string sourcePrefix;
+    sourcePrefix.reserve(256);
+    sourcePrefix.append(settingsUri.getScheme());
+    sourcePrefix.push_back('_');
+    sourcePrefix.append(settingsUri.getAuthority());
+    sourcePrefix.append(settingsUri.getPath());
+    return sourcePrefix;
 }
 
 void Cache::cacheConfigFile(const std::string& configId, const std::string& uri,

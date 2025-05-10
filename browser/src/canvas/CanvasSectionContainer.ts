@@ -549,7 +549,11 @@ class CanvasSectionContainer {
 			var section: CanvasSectionObject = this.sections[i];
 
 			if (section.documentObject === true) {
-				section.myTopLeft = [this.documentAnchor[0] + section.position[0] - this.documentTopLeft[0], this.documentAnchor[1] + section.position[1] - this.documentTopLeft[1]];
+				section.myTopLeft =[
+					this.documentAnchor[0] + section.position[0] - (app.isXOrdinateInFrozenPane(section.position[0]) ? 0: this.documentTopLeft[0]),
+					this.documentAnchor[1] + section.position[1] - (app.isYOrdinateInFrozenPane(section.position[1]) ? 0: this.documentTopLeft[1])
+				];
+
 				const isVisible = this.isDocumentObjectVisible(section);
 				if (isVisible !== section.isVisible) {
 					section.isVisible = isVisible;
@@ -1355,9 +1359,15 @@ class CanvasSectionContainer {
 		this.reNewAllSections(false);
 	}
 
-	findSectionContainingPoint (point: Array<number>): any {
+	findSectionContainingPoint (point: Array<number>, interactable = true): any {
 		for (var i: number = this.sections.length - 1; i > -1; i--) { // Search from top to bottom. Top section will be sent as target section.
-			if (this.sections[i].isLocated && !this.sections[i].windowSection && this.sections[i].showSection && (!this.sections[i].documentObject || this.sections[i].isVisible) && this.doesSectionIncludePoint(this.sections[i], point))
+			if (
+				this.sections[i].isLocated && !this.sections[i].windowSection &&
+				this.sections[i].showSection &&
+				(!this.sections[i].documentObject || this.sections[i].isVisible) &&
+				this.doesSectionIncludePoint(this.sections[i], point)
+				&& (interactable ? this.sections[i].interactable : true)
+			)
 				return this.sections[i];
 		}
 
@@ -1644,7 +1654,10 @@ class CanvasSectionContainer {
 			if (section.documentObject === true) { // "Document anchor" section should be processed before "document object" sections.
 				if (section.size && section.position) {
 					section.isLocated = true;
-					section.myTopLeft = [this.documentAnchor[0] + section.position[0] - this.documentTopLeft[0], this.documentAnchor[1] + section.position[1] - this.documentTopLeft[1]];
+					section.myTopLeft = [
+						this.documentAnchor[0] + section.position[0] - (app.isXOrdinateInFrozenPane(section.position[0]) ? 0 : this.documentTopLeft[0]),
+						this.documentAnchor[1] + section.position[1] - (app.isYOrdinateInFrozenPane(section.position[1]) ? 0 : this.documentTopLeft[1])
+					];
 				}
 			}
 			else if (section.boundToSection) { // Don't set boundToSection property for "window sections".
@@ -1898,7 +1911,9 @@ class CanvasSectionContainer {
 
 			x = Math.round(x);
 			y = Math.round(y);
-			let sectionXcoord = x - this.containerObject.getDocumentTopLeft()[0];
+			let sectionXcoord = x;
+			const positionAddition = this.containerObject.getDocumentTopLeft();
+
 			if (this.isCalcRTL()) {
 				// the document coordinates are not always in sync(fixing that is non-trivial!), so use the latest from map.
 				const docLayer = this.sectionProperties.docLayer;
@@ -1906,9 +1921,16 @@ class CanvasSectionContainer {
 				sectionXcoord = docSize.x - sectionXcoord - this.size[0];
 			}
 
-			this.myTopLeft[0] = this.containerObject.getDocumentAnchor()[0] + sectionXcoord;
-			this.myTopLeft[1] = this.containerObject.getDocumentAnchor()[1] + y - this.containerObject.getDocumentTopLeft()[1];
-			this.position[0] = x;
+			if (app.isXOrdinateInFrozenPane(sectionXcoord))
+				positionAddition[0] = 0;
+
+			if (app.isYOrdinateInFrozenPane(y))
+				positionAddition[1] = 0;
+
+			this.myTopLeft[0] = this.containerObject.getDocumentAnchor()[0] + sectionXcoord - positionAddition[0];
+			this.myTopLeft[1] = this.containerObject.getDocumentAnchor()[1] + y - positionAddition[1];
+
+			this.position[0] = sectionXcoord;
 			this.position[1] = y;
 			const isVisible = this.containerObject.isDocumentObjectVisible(this);
 			if (isVisible !== this.isVisible) {

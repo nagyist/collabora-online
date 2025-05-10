@@ -35,7 +35,6 @@
 #include <Poco/StreamCopier.h>
 #include <Poco/URI.h>
 
-#include "Admin.hpp"
 #include "Authorization.hpp"
 #include "ClientSession.hpp"
 #include "Common.hpp"
@@ -50,6 +49,7 @@
 #include "ProxyProtocol.hpp"
 #include "Util.hpp"
 #include "QuarantineUtil.hpp"
+#include <common/ConfigUtil.hpp>
 #include <common/JailUtil.hpp>
 #include <common/JsonUtil.hpp>
 #include <common/Log.hpp>
@@ -64,12 +64,13 @@
 #include <wsd/Process.hpp>
 
 #if !MOBILEAPP
+#include "Admin.hpp"
 #include <wopi/CheckFileInfo.hpp>
 #include <wopi/StorageConnectionManager.hpp>
 #include <net/HttpHelper.hpp>
+#include <sys/wait.h>
 #endif
 #include <sys/types.h>
-#include <sys/wait.h>
 
 using namespace COOLProtocol;
 
@@ -185,18 +186,18 @@ DocumentBroker::DocumentBroker(ChildType type, const std::string& uri, const Poc
     , _uriOrig(uri)
     , _limitLifeSeconds(std::chrono::seconds::zero())
     , _uriPublic(uriPublic)
-    , _saveManager(std::chrono::seconds(std::getenv("COOL_NO_AUTOSAVE") != nullptr
-                                            ? 0
-                                            : ConfigUtil::getConfigValueNonZero<int>(
-                                                  "per_document.idlesave_duration_secs", 30)),
-                   std::chrono::seconds(std::getenv("COOL_NO_AUTOSAVE") != nullptr
-                                            ? 0
-                                            : ConfigUtil::getConfigValueNonZero<int>(
-                                                  "per_document.autosave_duration_secs", 300)),
-                   std::chrono::milliseconds(ConfigUtil::getConfigValueNonZero<int>(
-                       "per_document.min_time_between_saves_ms", 500)))
-    , _storageManager(std::chrono::milliseconds(
-          ConfigUtil::getConfigValueNonZero<int>("per_document.min_time_between_uploads_ms", 5000)))
+    , _saveManager((std::getenv("COOL_NO_AUTOSAVE") != nullptr)
+                       ? std::chrono::seconds::zero()
+                       : ConfigUtil::getConfigValue<std::chrono::seconds>(
+                             "per_document.idlesave_duration_secs", 30),
+                   (std::getenv("COOL_NO_AUTOSAVE") != nullptr)
+                       ? std::chrono::seconds::zero()
+                       : ConfigUtil::getConfigValue<std::chrono::seconds>(
+                             "per_document.autosave_duration_secs", 300),
+                   ConfigUtil::getConfigValue<std::chrono::milliseconds>(
+                       "per_document.min_time_between_saves_ms", 500))
+    , _storageManager(ConfigUtil::getConfigValue<std::chrono::milliseconds>(
+          "per_document.min_time_between_uploads_ms", 5000))
     , _docKey(docKey)
     , _docId(Util::encodeId(DocBrokerId++, 3))
     , _configId(configId)
@@ -273,8 +274,9 @@ void DocumentBroker::setupTransfer(SocketPoll& from, const std::weak_ptr<StreamS
 
 static std::chrono::seconds getLimitLoadSecs()
 {
-    const auto value = ConfigUtil::getConfigValue<int>("per_document.limit_load_secs", 100);
-    return std::chrono::seconds(std::max(value, 0));
+    CONFIG_STATIC const auto value =
+        ConfigUtil::getConfigValue<std::chrono::seconds>("per_document.limit_load_secs", 100, 5);
+    return value;
 }
 
 void DocumentBroker::assertCorrectThread(const char* filename, int line) const
@@ -336,8 +338,13 @@ void DocumentBroker::pollThread()
     setupPriorities();
 
 #if !MOBILEAPP
-    CONFIG_STATIC const std::size_t IdleDocTimeoutSecs =
-        ConfigUtil::getConfigValue<int>("per_document.idle_timeout_secs", 3600);
+    CONFIG_STATIC const std::chrono::seconds IdleDocTimeoutSecs =
+        ConfigUtil::getConfigValue<std::chrono::seconds>("per_document.idle_timeout_secs", 3600);
+    if (IdleDocTimeoutSecs <= std::chrono::seconds(15))
+    {
+        LOG_WRN("The configured per_document.idle_timeout_secs ["
+                << IdleDocTimeoutSecs << "] is too low, consider increasing it");
+    }
 
     // Used to accumulate B/W deltas.
     uint64_t adminSent = 0;
@@ -361,8 +368,9 @@ void DocumentBroker::pollThread()
 
     bool waitingForMigrationMsg = false;
     std::chrono::time_point<std::chrono::steady_clock> migrationMsgStartTime;
-    static const std::chrono::microseconds migrationMsgTimeout = std::chrono::seconds(
-        ConfigUtil::getConfigValue<int>("indirection_endpoint.migration_timeout_secs", 180));
+    CONFIG_STATIC const std::chrono::microseconds migrationMsgTimeout =
+        ConfigUtil::getConfigValue<std::chrono::seconds>(
+            "indirection_endpoint.migration_timeout_secs", 180);
 
     // Main polling loop goodness.
     while (!_stop && _poll->continuePolling() && !SigUtil::getTerminationFlag())
@@ -499,8 +507,8 @@ void DocumentBroker::pollThread()
                 }
 
 #if !MOBILEAPP
-                // Remove idle documents after 1 hour.
-                if (isLoaded() && getIdleTimeSecs() >= IdleDocTimeoutSecs)
+                // Remove idle documents after the configured time.
+                if (isLoaded() && getIdleTime() >= IdleDocTimeoutSecs)
                 {
                     autoSaveAndStop("idle");
                 }
@@ -858,7 +866,7 @@ bool DocumentBroker::isAlive() const
 
 void DocumentBroker::timeoutNotLoaded(std::chrono::steady_clock::time_point now)
 {
-    if (!_stop && !_poll->isAlive() && !isLoaded() && now - _createTime > std::chrono::seconds(getLimitLoadSecs()))
+    if (!_stop && !_poll->isAlive() && !isLoaded() && now - _createTime > getLimitLoadSecs())
         stop("neverloaded");
 }
 
@@ -939,7 +947,7 @@ bool DocumentBroker::download(
 
     const std::string sessionId = session ? session->getId() : "000";
     LOG_INF("Loading [" << _docKey << "] for session [" << sessionId << "] in jail [" << jailId
-                        << ']');
+                        << "] from URI [" << uriPublic.toString() << ']');
 
     if (_unitWsd)
     {
@@ -1054,8 +1062,8 @@ bool DocumentBroker::download(
     }
     else
 #endif
-#if ENABLE_LOCAL_FILESYSTEM
     {
+        // Could be a conversion request.
         LocalStorage* localStorage = dynamic_cast<LocalStorage*>(_storage.get());
         if (localStorage != nullptr)
         {
@@ -1102,12 +1110,6 @@ bool DocumentBroker::download(
             Util::forcedExit(EX_SOFTWARE);
         }
     }
-#else // !ENABLE_LOCAL_FILESYSTEM
-    {
-        LOG_FTL("Unknown or unsupported storage");
-        Util::forcedExit(EX_SOFTWARE);
-    }
-#endif // !ENABLE_LOCAL_FILESYSTEM
 
     if (session)
     {
@@ -2126,6 +2128,12 @@ bool DocumentBroker::updateStorageLockState(ClientSession& session, StorageBase:
         return false;
     }
 
+    if (!_storage)
+    {
+        error = "Missing storage";
+        return false;
+    }
+
     const StorageBase::LockUpdateResult result = _storage->updateLockState(
         session.getAuthorization(), *_lockCtx, lock, _currentStorageAttrs);
 
@@ -2177,6 +2185,12 @@ bool DocumentBroker::updateStorageLockStateAsync(const std::shared_ptr<ClientSes
 
         const std::shared_ptr<ClientSession> requestingSession = _lockStateUpdateRequest->session();
         _lockStateUpdateRequest.reset(); // No longer needed.
+
+        if (!requestingSession)
+        {
+            LOG_DBG("RequestingSession no longer exists");
+            return;
+        }
 
         // We have some result, look at the result status.
         handleLockResult(*requestingSession, asyncLock.result());
@@ -3146,7 +3160,7 @@ void DocumentBroker::setLoaded()
         LOG_INF("Document [" << _docKey << "] loaded in " << _loadDuration
                              << ", saving-timeout set to " << _saveManager.getSavingTimeout()
                              << ", doc PSS: " << Util::getMemoryUsagePSS(_childProcess->getPid())
-                             << " KB, total PSS: " << Util::getProcessTreePss(getpid()) << " KB");
+                             << " KB, total PSS: " << Util::getProcessTreePss(Util::getProcessId()) << " KB");
 
         if(_unitWsd != nullptr)
         {
@@ -3985,6 +3999,8 @@ std::shared_ptr<ClientSession> DocumentBroker::createNewClientSession(
     const bool isReadOnly,
     const RequestDetails &requestDetails)
 {
+    ASSERT_CORRECT_THREAD();
+
     try
     {
         if (isMarkedToDestroy() || _docState.isCloseRequested())
@@ -4508,6 +4524,8 @@ bool DocumentBroker::lookupSendClipboardTag(const std::shared_ptr<StreamSocket> 
     return false;
 }
 
+#if !MOBILEAPP
+
 void DocumentBroker::handleClipboardRequest(ClipboardRequest type,  const std::shared_ptr<StreamSocket> &socket,
                                             const std::string &viewId, const std::string &tag,
                                             const std::shared_ptr<std::string> &data)
@@ -4565,6 +4583,8 @@ void DocumentBroker::handleMediaRequest(const std::string_view range,
         }
     }
 }
+
+#endif
 
 bool DocumentBroker::requestTileRendering(TileDesc& tile, bool forceKeyframe, int version,
                                           const std::chrono::steady_clock::time_point now,
@@ -4996,6 +5016,7 @@ void DocumentBroker::closeDocument(const std::string& reason)
 {
     ASSERT_CORRECT_THREAD();
 
+#if !MOBILEAPP
     if (reason == "oom")
     {
         // This is an internal close request, coming from Admin::triggerMemoryCleanup().
@@ -5008,6 +5029,7 @@ void DocumentBroker::closeDocument(const std::string& reason)
         dumpState(oss);
         LOG_WRN("OOM-closing Document [" << _docId << "]: " << oss.str());
     }
+#endif
 
     _docState.setCloseRequested();
     _closeReason = reason;
@@ -5252,7 +5274,7 @@ void DocumentBroker::dumpState(std::ostream& os)
     os << "\n  backgroundAutoSave: " << (_backgroundAutoSave?"true":"false");
     os << "\n  backgroundManualSave: " << (_backgroundManualSave?"true":"false");
     os << "\n  isViewFileExtension: " << _isViewFileExtension;
-    os << "\n  Total PSS: " << Util::getProcessTreePss(getpid()) << " KB";
+    os << "\n  Total PSS: " << Util::getProcessTreePss(Util::getProcessId()) << " KB";
     if (childPid)
         os << "\n  Doc PSS: " << Util::getProcessTreePss(childPid) << " KB";
     if constexpr (!Util::isMobileApp())
@@ -5264,7 +5286,7 @@ void DocumentBroker::dumpState(std::ostream& os)
 
     if (_limitLifeSeconds > std::chrono::seconds::zero())
         os << "\n  life limit in seconds: " << _limitLifeSeconds.count();
-    os << "\n  idle time: " << getIdleTimeSecs();
+    os << "\n  idle time: " << getIdleTime();
     os << "\n  cursor X: " << _cursorPosX << ", Y: " << _cursorPosY << ", W: " << _cursorWidth
        << ", H: " << _cursorHeight;
 

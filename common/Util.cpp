@@ -18,9 +18,10 @@
 
 #include "Util.hpp"
 #include "Rectangle.hpp"
-#include "SigHandlerTrap.hpp"
 
-#include <poll.h>
+#if !MOBILEAPP
+#include "SigHandlerTrap.hpp"
+#endif
 
 #if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
 #  include <execinfo.h>
@@ -38,8 +39,9 @@
 #import <Foundation/Foundation.h>
 #endif
 #include <sys/stat.h>
-#include <sys/uio.h>
 #include <sys/types.h>
+
+#include <sys/uio.h>
 #include <unistd.h>
 #include <dirent.h>
 #include <fcntl.h>
@@ -124,56 +126,6 @@ namespace Util
             return _rng();
         }
 
-        int getURandom()
-        {
-            static int urandom = open("/dev/urandom", O_RDONLY);
-            if (urandom < 0)
-            {
-                LOG_SYS("Failed to source hard random numbers");
-                fprintf(stderr, "No adequate source of randomness");
-                abort();
-                // Potentially dangerous to continue without randomness
-            }
-            return urandom;
-        }
-
-        // Since we have a fd always open to /dev/urandom
-        // 'read' is hopefully no less efficient than getrandom.
-        std::vector<char> getBytes(const std::size_t length)
-        {
-            std::vector<char> v(length);
-            char* p = v.data();
-            size_t nbytes = length;
-
-            while (nbytes)
-            {
-                ssize_t b = read(getURandom(), p, nbytes);
-                if (b <= 0)
-                {
-                    if (errno == EINTR)
-                        continue;
-                    break;
-                }
-
-                assert(static_cast<size_t>(b) <= nbytes);
-
-                nbytes -= b;
-                p += b;
-            }
-
-            size_t offset = p - v.data();
-            if (offset < length)
-            {
-                fprintf(stderr, "No adequate source of randomness, "
-                        "failed to read %ld bytes: with error %s\n",
-                        (long int)length, strerror(errno));
-                // Potentially dangerous to continue without randomness
-                abort();
-            }
-
-            return v;
-        }
-
         /// Generate a string of random characters.
         std::string getHexString(const std::size_t length)
         {
@@ -207,7 +159,7 @@ namespace Util
                      s.end());
             return s.substr(0, length);
         }
-    }
+    } // namespace rng
 
     bool windowingAvailable()
     {
@@ -287,15 +239,9 @@ namespace Util
         return replace(std::move(r), "\n", " / ");
     }
 
-#if defined __linux__
-    static thread_local pid_t ThreadTid = 0;
-
-    pid_t getThreadId()
-#else
     static thread_local long ThreadTid = 0;
 
     long getThreadId()
-#endif
     {
         // Avoid so many redundant system calls
 #if defined __linux__
@@ -360,7 +306,7 @@ namespace Util
         TraceEvent::emitOneRecordingIfEnabled("{\"name\":\"thread_name\",\"ph\":\"M\",\"args\":{\"name\":\""
                                               + s
                                               + "\"},\"pid\":"
-                                              + std::to_string(getpid())
+                                              + std::to_string(Util::getProcessId())
                                               + ",\"tid\":"
                                               + std::to_string(Util::getThreadId())
                                               + "},\n");
@@ -506,7 +452,7 @@ namespace Util
         std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
         std::time_t now_c = std::chrono::system_clock::to_time_t(now);
         std::tm now_tm;
-        gmtime_r(&now_c, &now_tm);
+        time_t_to_gmtime(now_c, now_tm);
         strftime(time_now, sizeof(time_now), format, &now_tm);
 
         return time_now;
@@ -522,7 +468,7 @@ namespace Util
         char http_time[64];
         std::time_t time_c = std::chrono::system_clock::to_time_t(time);
         std::tm time_tm;
-        gmtime_r(&time_c, &time_tm);
+        time_t_to_gmtime(time_c, time_tm);
         strftime(http_time, sizeof(http_time), "%a, %d %b %Y %T", &time_tm);
 
         return http_time;
@@ -546,7 +492,7 @@ namespace Util
         char time_modified[64];
         std::time_t lastModified_us_t = std::chrono::system_clock::to_time_t(time);
         std::tm lastModified_tm;
-        gmtime_r(&lastModified_us_t,&lastModified_tm);
+        time_t_to_gmtime(lastModified_us_t, lastModified_tm);
         strftime(time_modified, sizeof(time_modified), "%FT%T.", &lastModified_tm);
 
         auto lastModified_s = std::chrono::time_point_cast<std::chrono::seconds>(time);
@@ -561,11 +507,14 @@ namespace Util
         return oss.str();
     }
 
+#if !MOBILEAPP
+    // These are used in test/WhiteBoxTests.cpp and thus not needed in a mobile app.
+
     std::string time_point_to_iso8601(std::chrono::system_clock::time_point tp)
     {
         const std::time_t tt = std::chrono::system_clock::to_time_t(tp);
         std::tm tm;
-        gmtime_r(&tt, &tm);
+        time_t_to_gmtime(tt, tm);
 
         std::ostringstream oss;
         oss << tm.tm_year + 1900 << '-' << std::setfill('0') << std::setw(2) << tm.tm_mon + 1 << '-'
@@ -623,6 +572,8 @@ namespace Util
         return timestamp;
     }
 
+#endif // !MOBILEAPP
+
     /// Returns the given system_clock time_point as string in the local time.
     /// Format: Thu Jan 27 03:45:27.123 2022
     std::string getSystemClockAsString(const std::chrono::system_clock::time_point time)
@@ -635,7 +586,7 @@ namespace Util
             1000;
 
         std::tm tm;
-        localtime_r(&t, &tm);
+        time_t_to_localtime(t, tm);
 
         char buffer[128] = { 0 };
         std::strftime(buffer, 80, "%a %b %d %H:%M:%S", &tm);
@@ -742,9 +693,11 @@ namespace Util
         __gcov_dump();
 #endif
 
+#if !MOBILEAPP
         /// Wait for the signal handler, if any,
         /// and prevent _Exit while collecting backtrace.
         SigUtil::SigHandlerTrap::wait();
+#endif
 
         std::_Exit(code);
     }
@@ -773,103 +726,6 @@ namespace Util
         return info;
     }
 
-    bool matchRegex(const std::set<std::string>& set, const std::string& subject)
-    {
-        if (set.find(subject) != set.end())
-        {
-            return true;
-        }
-
-        // Not a perfect match, try regex.
-        for (const auto& value : set)
-        {
-            try
-            {
-                // Not performance critical to warrant caching.
-                Poco::RegularExpression re(value, Poco::RegularExpression::RE_CASELESS);
-                Poco::RegularExpression::Match reMatch;
-
-                // Must be a full match.
-                if (re.match(subject, reMatch) && reMatch.offset == 0 &&
-                    reMatch.length == subject.size())
-                {
-                    return true;
-                }
-            }
-            catch (const std::exception& exc)
-            {
-                // Nothing to do; skip.
-            }
-        }
-
-        return false;
-    }
-
-    std::string getValue(const std::map<std::string, std::string>& map, const std::string& subject)
-    {
-        if (const auto& it = map.find(subject); it != map.end())
-        {
-            return it->second;
-        }
-
-        // Not a perfect match, try regex.
-        for (const auto& value : map)
-        {
-            try
-            {
-                // Not performance critical to warrant caching.
-                Poco::RegularExpression re(value.first, Poco::RegularExpression::RE_CASELESS);
-                Poco::RegularExpression::Match reMatch;
-
-                // Must be a full match.
-                if (re.match(subject, reMatch) && reMatch.offset == 0 &&
-                    reMatch.length == subject.size())
-                {
-                    return value.second;
-                }
-            }
-            catch (const std::exception& exc)
-            {
-                // Nothing to do; skip.
-            }
-        }
-
-        return std::string();
-    }
-
-    std::string getValue(const std::set<std::string>& set, const std::string& subject)
-    {
-        auto search = set.find(subject);
-        if (search != set.end())
-        {
-            return *search;
-        }
-
-        // Not a perfect match, try regex.
-        for (const auto& value : set)
-        {
-            try
-            {
-                // Not performance critical to warrant caching.
-                Poco::RegularExpression re(value, Poco::RegularExpression::RE_CASELESS);
-                Poco::RegularExpression::Match reMatch;
-
-                // Must be a full match.
-                if (re.match(subject, reMatch) && reMatch.offset == 0 &&
-                    reMatch.length == subject.size())
-                {
-                    return value;
-                }
-            }
-            catch (const std::exception& exc)
-            {
-                // Nothing to do; skip.
-            }
-        }
-
-        return std::string();
-    }
-
     void assertCorrectThread(std::thread::id owner, const char* fileName, int lineNo)
     {
         // uninitialized owner means detached and can be invoked by any thread.
@@ -893,8 +749,8 @@ namespace Util
             {
                 std::cerr << domain << ": Sleeping " << delaySecs
                           << " seconds to give you time to attach debugger to process "
-                          << getpid() << std::endl
-                          << "sudo gdb --pid=" << getpid() << std::endl;
+                          << Util::getProcessId() << std::endl
+                          << "sudo gdb --pid=" << Util::getProcessId() << std::endl;
                 std::this_thread::sleep_for(std::chrono::seconds(delaySecs));
             }
         }
@@ -960,7 +816,7 @@ namespace Util
     Backtrace::Backtrace(const int maxFrames, const int skip)
         : skipFrames(skip)
     {
-#if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
+#if defined(__linux) && !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
         std::vector<void*> backtraceBuffer(maxFrames + skip, nullptr);
 
         const int numSlots = ::backtrace(backtraceBuffer.data(), backtraceBuffer.size());
@@ -1054,8 +910,10 @@ namespace Util
 
 } // namespace Util
 
+#if !MOBILEAPP
 namespace SigUtil {
     std::atomic<int> SigHandlerTrap::SigHandling;
 } // end namespace SigUtil
+#endif
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */
