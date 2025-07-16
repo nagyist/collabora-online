@@ -232,6 +232,8 @@ function getConditionalDataBarMenuElements(more, jsdialogDropdown) {
 global.getConditionalDataBarMenuElements = getConditionalDataBarMenuElements;
 
 var sendInsertTableFunction = function(event) {
+	if (event.target.tagName !== 'BUTTON')
+		return;
 	var col = $(event.target).index() + 1;
 	var row = $(event.target).parent().index() + 1;
 	$('.col').removeClass('bright');
@@ -248,6 +250,8 @@ var sendInsertTableFunction = function(event) {
 };
 
 var highlightTableFunction = function(event) {
+	if (event.target.tagName !== 'BUTTON')
+		return;
 	var col = $(event.target).index() + 1;
 	var row = $(event.target).parent().index() + 1;
 	$('.col').removeClass('bright');
@@ -516,7 +520,10 @@ function createShapesPanel(shapeType) {
 }
 
 var onShapeClickFunction = function(e) {
-	app.map.sendUnoCommand('.uno:' + $(e.target).data().uno);
+	let name = $(e.target).data().uno;
+	if (!name)
+		return;
+	app.map.sendUnoCommand('.uno:' + name);
 	closePopup();
 	e.stopPropagation();
 };
